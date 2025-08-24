@@ -16,7 +16,6 @@ st.set_page_config(
 # =========================
 # OpenAI Client Setup
 # =========================
-# Uses the API key from Streamlit Secrets
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 except KeyError:
@@ -30,13 +29,61 @@ if 'page' not in st.session_state:
     st.session_state['page'] = "Home"
 if 'premium' not in st.session_state:
     st.session_state['premium'] = False
-if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+
+# =========================
+# Custom CSS for modern styling
+# =========================
+st.markdown("""
+<style>
+/* Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+
+body {
+    font-family: 'Inter', sans-serif;
+}
+
+h1, h2, h3, h4, h5 {
+    font-family: 'Inter', sans-serif;
+}
+
+/* Main title */
+.main-title {
+    font-size: 42px;
+    color: #1F2937;
+    text-align: center;
+    font-weight: 700;
+    margin-bottom: 5px;
+}
+
+/* Subtitle */
+.sub-title {
+    font-size: 20px;
+    color: #4B5563;
+    text-align: center;
+    margin-top: -5px;
+    margin-bottom: 20px;
+}
+
+/* Info icon */
+.info-icon {
+    display: inline-block;
+    margin-left: 5px;
+    color: #6B7280;
+    cursor: pointer;
+}
+
+input[type=number]::-webkit-inner-spin-button,
+input[type=number]::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}
+</style>
+""", unsafe_allow_html=True)
 
 # =========================
 # Sidebar Navigation
 # =========================
-st.sidebar.title("FinAI Navigation")
+st.sidebar.title("Navigation")
 pages = ["Home", "Tax Optimization", "Investments", "SME Dashboard", "Premium Modules"]
 
 for p in pages:
@@ -44,13 +91,13 @@ for p in pages:
         st.session_state['page'] = p
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("💡 **AI Assistant:** Ask questions or get guidance here.")
+st.sidebar.markdown("Ask the AI Assistant for guidance:")
 
 # =========================
-# AI Assistant Function
+# AI Assistant
 # =========================
 def ai_chat():
-    user_input = st.sidebar.text_input("Ask the AI Assistant")
+    user_input = st.sidebar.text_input("Type your question")
     if st.sidebar.button("Send"):
         if user_input:
             try:
@@ -119,51 +166,32 @@ def project_investments(current, annual, years, rate=0.08):
     return projection
 
 # =========================
-# Pages
+# Page Rendering
 # =========================
 page = st.session_state['page']
 
 if page == "Home":
-    st.markdown("""
-    <style>
-    .main-title {
-        font-family: 'Arial', sans-serif;
-        font-size: 42px;
-        color: #2E86C1;
-        text-align: center;
-        margin-bottom: 5px;
-    }
-    .sub-title {
-        font-family: 'Arial', sans-serif;
-        font-size: 20px;
-        color: gray;
-        text-align: center;
-        margin-top: -5px;
-        margin-bottom: 20px;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
     st.markdown('<div class="main-title">FinAI - Smart Finance Made Simple</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Your AI-powered platform for tax, investments & business growth</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">AI-powered platform for tax, investments & business growth</div>', unsafe_allow_html=True)
     
     st.image("https://images.unsplash.com/photo-1581091012184-35f55b63b78c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", use_column_width=True)
+    
     st.markdown("""
     <div style="text-align:center; margin-top:20px;">
-        <p style="font-size:18px; color:#555;">
-        Navigate through modules using the sidebar. Ask the AI assistant for advice anytime!
+        <p style="font-size:18px; color:#4B5563;">
+        Navigate through modules using the sidebar. Enter your data to see projections and tax optimizations.
         </p>
     </div>
     """, unsafe_allow_html=True)
 
 elif page == "Tax Optimization":
-    st.header("💸 Tax Optimization")
+    st.header("Tax Optimization")
     with st.form("tax_form"):
-        income = st.number_input("Annual Income (ZAR)",value=500000)
-        age = st.number_input("Age",value=30)
-        retirement = st.number_input("Retirement Contributions",value=0)
-        medical = st.number_input("Medical Aid Contributions",value=0)
-        donations = st.number_input("Donations",value=0)
+        income = st.number_input("Annual Income (ZAR)",value=500000, step=1000)
+        age = st.number_input("Age",value=30, step=1)
+        retirement = st.number_input("Retirement Contributions (ZAR)",value=0, step=1000)
+        medical = st.number_input("Medical Aid Contributions (ZAR)",value=0, step=1000)
+        donations = st.number_input("Donations (ZAR)",value=0, step=1000)
         owns_business = st.checkbox("Owns Business?")
         submitted = st.form_submit_button("Calculate Tax & Suggestions")
     if submitted:
@@ -186,10 +214,10 @@ elif page == "Tax Optimization":
         st.plotly_chart(fig,use_container_width=True)
 
 elif page == "Investments":
-    st.header("📈 Investment Projections")
+    st.header("Investment Projections")
     with st.form("investment_form"):
-        current = st.number_input("Current Savings (ZAR)",value=0)
-        annual = st.number_input("Annual Contribution (ZAR)",value=0)
+        current = st.number_input("Current Savings (ZAR)",value=0, step=1000)
+        annual = st.number_input("Annual Contribution (ZAR)",value=0, step=1000)
         years = st.slider("Years",1,50,20)
         rate = st.slider("Expected Annual Return %",0.0,20.0,8.0)/100
         submitted = st.form_submit_button("Project Growth")
@@ -200,10 +228,10 @@ elif page == "Investments":
         st.table(df.tail(5))
 
 elif page == "SME Dashboard":
-    st.header("🏢 SME Dashboard")
+    st.header("SME Dashboard")
     st.markdown("Interactive cashflow, tax simulations, and entity guidance for SMEs.")
-    revenue = st.number_input("Annual Revenue (ZAR)",value=1000000)
-    expenses = st.number_input("Annual Expenses (ZAR)",value=600000)
+    revenue = st.number_input("Annual Revenue (ZAR)",value=1000000, step=1000)
+    expenses = st.number_input("Annual Expenses (ZAR)",value=600000, step=1000)
     profit = revenue - expenses
     st.subheader(f"Estimated Profit: ZAR {profit}")
     tax_due = calculate_sa_tax(profit)
@@ -211,10 +239,10 @@ elif page == "SME Dashboard":
     st.markdown("Unlock **Premium modules** for advanced entity structuring, deductions, and projections.")
 
 elif page == "Premium Modules":
-    st.header("⭐ Premium Modules")
+    st.header("Premium Modules")
     st.markdown("Unlock advanced tax strategies, entity simulations, and investment planning.")
     if not st.session_state['premium']:
-        st.markdown("You need a premium subscription to access these modules.")
+        st.markdown("Premium subscription required.")
         if st.button("Activate Premium (Sandbox)"):
             st.session_state['premium'] = True
             st.success("Premium Mode Activated!")
@@ -233,4 +261,4 @@ elif page == "Premium Modules":
 # Footer
 # =========================
 st.markdown("---")
-st.markdown("<p style='text-align:center;color:gray;'>FinAI - AI Financial Platform | Prototype Demo | All projections are for guidance only.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:#6B7280;'>FinAI - AI Financial Platform | Prototype Demo | All projections are for guidance only.</p>", unsafe_allow_html=True)
