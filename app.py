@@ -3,35 +3,40 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
-import openai
+from openai import OpenAI
 import stripe
+import os
 
 # =========================
 # Configuration & Setup
 # =========================
 st.set_page_config(page_title="FinAI - AI Financial Platform", layout="wide", initial_sidebar_state="expanded")
-openai.api_key = "YOUR_OPENAI_API_KEY" # Replace with your OpenAI API key
+
+# OpenAI client (latest API)
+client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Stripe sandbox setup
-stripe.api_key = "YOUR_STRIPE_TEST_SECRET_KEY" # Replace with your Stripe sandbox secret key
-PRODUCT_ID = "prod_xxxxx" # Stripe product ID for premium (sandbox)
-PRICE_ID = "price_xxxxx" # Stripe price ID for premium (sandbox)
+stripe.api_key = os.getenv("STRIPE_TEST_SECRET_KEY")
+PRODUCT_ID = "prod_xxxxx"
+PRICE_ID = "price_xxxxx"
 
-# Session state
+# Session state for page navigation and premium
+if 'page' not in st.session_state:
+    st.session_state['page'] = "Home"
 if 'premium' not in st.session_state:
     st.session_state['premium'] = False
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
-st.markdown("<h1 style='text-align:center;color:#2E86C1;'>💰 FinAI - AI Financial & Tax Platform</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center;color:gray;'>AI-powered tax, investment, and SME advisory tool</p>", unsafe_allow_html=True)
+# =========================
+# Sidebar Navigation (Sleek Bar Buttons)
+# =========================
+st.sidebar.title("FinAI Navigation")
+pages = ["Home", "Tax Optimization", "Investments", "SME Dashboard", "Premium Modules"]
 
-# =========================
-# Sidebar Navigation
-# =========================
-st.sidebar.title("Navigation")
-menu = ["Home", "Tax Optimization", "Investments", "SME Dashboard", "Premium Modules"]
-choice = st.sidebar.radio("Go to", menu)
+for p in pages:
+    if st.sidebar.button(p):
+        st.session_state['page'] = p
 
 st.sidebar.markdown("---")
 st.sidebar.markdown("💡 **AI Assistant:** Ask questions or get guidance here.")
@@ -44,9 +49,9 @@ def ai_chat():
     if st.sidebar.button("Send"):
         if user_input:
             try:
-                response = openai.ChatCompletion.create(
+                response = client.chat.completions.create(
                     model="gpt-4.1-mini",
-                    messages=[{"role":"user","content":user_input}],
+                    messages=[{"role": "user", "content": user_input}],
                     temperature=0.7
                 )
                 answer = response.choices[0].message.content
@@ -77,7 +82,7 @@ def calculate_sa_tax(income, age=30, retirement=0):
         elif taxable_income > lower:
             tax += (taxable_income - lower + 1)*rate
             break
-    tax -= 17450 # Primary rebate
+    tax -= 17450
     if age >= 65: tax -= 9590
     if age >= 75: tax -= 3190
     return max(int(tax),0)
@@ -109,18 +114,44 @@ def project_investments(current, annual, years, rate=0.08):
     return projection
 
 # =========================
-# Home Page
+# Pages
 # =========================
-if choice=="Home":
-    st.markdown("## Welcome to FinAI!")
-    st.markdown("Your AI-powered platform for **tax optimization, investment growth, and SME advisory**.")
-    st.image("https://images.unsplash.com/photo-1565372918674-30f7ad4f77a2?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&ixid=MnwxMTc3M3wwfDF8c2VhcmNofDF8fGZpbmFuY2V8ZW58MHx8fHwxNjkwMzUxODcw&ixlib=rb-4.0.3&q=80&w=1080",use_column_width=True)
-    st.markdown("Use the sidebar to navigate through modules. Ask the AI assistant for help anytime!")
+page = st.session_state['page']
 
-# =========================
-# Tax Optimization
-# =========================
-elif choice=="Tax Optimization":
+if page == "Home":
+    st.markdown("""
+    <style>
+    .main-title {
+        font-family: 'Arial', sans-serif;
+        font-size: 42px;
+        color: #2E86C1;
+        text-align: center;
+        margin-bottom: 5px;
+    }
+    .sub-title {
+        font-family: 'Arial', sans-serif;
+        font-size: 20px;
+        color: gray;
+        text-align: center;
+        margin-top: -5px;
+        margin-bottom: 20px;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div class="main-title">FinAI - Smart Finance Made Simple</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sub-title">Your AI-powered platform for tax, investments & business growth</div>', unsafe_allow_html=True)
+    
+    st.image("https://images.unsplash.com/photo-1581091012184-35f55b63b78c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", use_column_width=True)
+    st.markdown("""
+    <div style="text-align:center; margin-top:20px;">
+        <p style="font-size:18px; color:#555;">
+        Navigate through modules using the sidebar. Ask the AI assistant for advice anytime!
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+
+elif page == "Tax Optimization":
     st.header("💸 Tax Optimization")
     with st.form("tax_form"):
         income = st.number_input("Annual Income (ZAR)",value=500000)
@@ -149,10 +180,7 @@ elif choice=="Tax Optimization":
         fig = px.bar(df,x="Strategy",y="Potential Saving",color="Potential Saving",title="Potential Savings by Strategy")
         st.plotly_chart(fig,use_container_width=True)
 
-# =========================
-# Investments
-# =========================
-elif choice=="Investments":
+elif page == "Investments":
     st.header("📈 Investment Projections")
     with st.form("investment_form"):
         current = st.number_input("Current Savings (ZAR)",value=0)
@@ -166,10 +194,7 @@ elif choice=="Investments":
         st.line_chart(df.set_index("Year"))
         st.table(df.tail(5))
 
-# =========================
-# SME Dashboard
-# =========================
-elif choice=="SME Dashboard":
+elif page == "SME Dashboard":
     st.header("🏢 SME Dashboard")
     st.markdown("Interactive cashflow, tax simulations, and entity guidance for SMEs.")
     revenue = st.number_input("Annual Revenue (ZAR)",value=1000000)
@@ -180,16 +205,12 @@ elif choice=="SME Dashboard":
     st.subheader(f"Estimated Tax: ZAR {tax_due}")
     st.markdown("Unlock **Premium modules** for advanced entity structuring, deductions, and projections.")
 
-# =========================
-# Premium Modules
-# =========================
-elif choice=="Premium Modules":
+elif page == "Premium Modules":
     st.header("⭐ Premium Modules")
     st.markdown("Unlock advanced tax strategies, entity simulations, and investment planning.")
     if not st.session_state['premium']:
         st.markdown("You need a premium subscription to access these modules.")
         if st.button("Activate Premium (Sandbox)"):
-            # Mock Stripe payment flow for demo
             st.session_state['premium'] = True
             st.success("Premium Mode Activated!")
     if st.session_state['premium']:
