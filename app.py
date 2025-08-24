@@ -5,19 +5,19 @@ import plotly.express as px
 from openai import OpenAI
 
 # =========================
-# Configuration
+# Config
 # =========================
 st.set_page_config(page_title="FinAI - AI Financial Platform",
                    layout="wide",
                    initial_sidebar_state="expanded")
 
 # =========================
-# OpenAI Client Setup
+# OpenAI client
 # =========================
 try:
     client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 except KeyError:
-    st.error("OpenAI API key not found! Please add it in Streamlit Cloud Secrets as OPENAI_API_KEY.")
+    st.error("OpenAI API key not found! Add it to Streamlit Cloud Secrets as OPENAI_API_KEY.")
     st.stop()
 
 # =========================
@@ -29,7 +29,7 @@ if 'premium' not in st.session_state:
     st.session_state['premium'] = False
 
 # =========================
-# Custom CSS
+# Custom CSS for modern look
 # =========================
 st.markdown("""
 <style>
@@ -37,14 +37,9 @@ st.markdown("""
 
 body {font-family: 'Inter', sans-serif; color:#1F2937; line-height:1.6;}
 h1,h2,h3,h4,h5 {font-family: 'Inter', sans-serif;}
-.main-title {font-size:42px; text-align:center; font-weight:700; margin-bottom:10px; color:#111827;}
-.sub-title {font-size:20px; text-align:center; margin-top:-5px; margin-bottom:25px; color:#6B7280;}
-.section-header {font-size:28px; color:#111827; margin-top:20px; margin-bottom:10px; font-weight:600;}
-.info-icon {color:#6B7280; cursor:pointer; font-weight:600;}
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button {-webkit-appearance: none; margin: 0;}
 .stButton>button {background-color:#2563EB; color:white; border:none; border-radius:5px; padding:0.5rem 1rem;}
 .stButton>button:hover {background-color:#1D4ED8; color:white;}
+.ai-input {width:60%; padding:12px 20px; border-radius:10px; border:1px solid #ccc; font-size:18px;}
 </style>
 """, unsafe_allow_html=True)
 
@@ -58,29 +53,26 @@ for p in pages:
         st.session_state['page'] = p
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("💬 Ask the AI Assistant:")
+st.sidebar.markdown("💬 AI Assistant:")
 
 # =========================
-# AI Assistant
+# AI Chat
 # =========================
-def ai_chat():
-    user_input = st.sidebar.text_input("Ask a question")
-    if st.sidebar.button("Send"):
-        if user_input:
-            try:
-                response = client.chat.completions.create(
-                    model="gpt-4.1-mini",
-                    messages=[{"role": "user", "content": user_input}],
-                    temperature=0.7
-                )
-                answer = response.choices[0].message.content
-                st.sidebar.markdown(f"**AI Assistant:** {answer}")
-            except Exception as e:
-                st.sidebar.error(f"Error: {e}")
-ai_chat()
+def ai_chat(user_input):
+    if user_input:
+        try:
+            response = client.chat.completions.create(
+                model="gpt-4.1-mini",
+                messages=[{"role": "user", "content": user_input}],
+                temperature=0.7
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            return f"Error: {e}"
+    return ""
 
 # =========================
-# Utility Functions
+# Utilities
 # =========================
 def calculate_sa_tax(income, age=30, retirement=0):
     taxable_income = max(income - retirement, 0)
@@ -132,79 +124,130 @@ def project_investments(current, annual, years, rate=0.08):
     return projection
 
 # =========================
-# Page Rendering
+# Pages
 # =========================
 page = st.session_state['page']
 
-if page == "Home":
-    st.markdown('<div class="main-title">FinAI - Smart Finance Made Simple</div>', unsafe_allow_html=True)
-    st.markdown('<div class="sub-title">Professional AI-powered platform for tax, investments & business growth</div>', unsafe_allow_html=True)
-    st.image("https://images.unsplash.com/photo-1581091012184-35f55b63b78c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080", use_column_width=True)
-    st.markdown("Welcome! Navigate modules using the sidebar. Input your data to see projections and optimization suggestions.", unsafe_allow_html=True)
+# ----------------- Home -----------------
+if page=="Home":
+    st.markdown("""
+    <div style="position:relative;text-align:center;color:white;">
+        <img src="https://images.unsplash.com/photo-1576675780660-5d162e08cdb0?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1400"
+            style="width:100%; border-radius:15px; filter: brightness(0.65);">
+        <div style="position:absolute; top:40%; left:50%; transform:translate(-50%,-50%);">
+            <h1 style="font-size:60px; margin-bottom:10px;">Welcome to FinAI</h1>
+            <p style="font-size:22px; margin-bottom:20px;">Use the AI assistant below to navigate your financial dashboard instantly.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-elif page == "Tax Optimization":
-    st.markdown('<div class="section-header">Calculate Tax</div>', unsafe_allow_html=True)
-    with st.form("tax_calc_form"):
-        income = st.number_input("Annual Income (ZAR)", value=500000, step=1000)
-        age = st.number_input("Age", value=30, step=1)
-        retirement = st.number_input("Retirement Contributions (ZAR)", value=0, step=1000)
-        submitted_calc = st.form_submit_button("Calculate Tax")
-    if submitted_calc:
-        tax_due = calculate_sa_tax(income, age, retirement)
-        st.subheader(f"Estimated Tax Due: ZAR {tax_due}")
+    # AI Search Input
+    user_question = st.text_input("Ask the AI Assistant anything...", "", key="home_ai_input")
+    if st.button("Send Question"):
+        answer = ai_chat(user_question)
+        st.success(answer)
 
-    st.markdown('<div class="section-header">Suggestions to Reduce Tax</div>', unsafe_allow_html=True)
-    with st.form("tax_suggestions_form"):
-        medical = st.number_input("Medical Aid Contributions (ZAR)", value=0, step=1000, help="Contributions can reduce taxable income via medical credits.")
-        donations = st.number_input("Donations (ZAR)", value=0, step=1000, help="Deductible donations can reduce tax.")
-        owns_business = st.checkbox("Owns Business?", help="Business ownership may allow deduction of business expenses.")
-        submitted_suggestions = st.form_submit_button("Show Suggestions")
-    if submitted_suggestions:
-        user_data = {
-            "income":income,
-            "age":age,
-            "retirement_contributions":retirement,
-            "medical_aid_contributions":medical,
-            "donations":donations,
-            "owns_business":owns_business
-        }
-        suggestions = suggest_optimizations(user_data)
-        st.markdown("### Suggested Strategies:")
-        for s in suggestions:
-            st.markdown(f"- **{s['action']}** ({s['saving']})")
-        if suggestions:
-            df = pd.DataFrame([{"Strategy":s['action'], "Potential Saving":s['saving']} for s in suggestions])
-            fig = px.bar(df, x="Strategy", y="Potential Saving", color="Potential Saving", title="Potential Savings by Strategy")
-            st.plotly_chart(fig, use_container_width=True)
+    # Sleek module section
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    st.markdown("""
+    <div style="display:flex; justify-content:space-around; text-align:center; margin-top:30px;">
+        <div style="width:23%; padding:20px;">
+            <h2>Tax Optimization</h2>
+            <p>Calculate taxes and explore strategies to reduce them efficiently.</p>
+        </div>
+        <div style="width:23%; padding:20px;">
+            <h2>Investments</h2>
+            <p>Project your savings growth and plan long-term investments.</p>
+        </div>
+        <div style="width:23%; padding:20px;">
+            <h2>SME Dashboard</h2>
+            <p>Track revenue, expenses, and profits for your business easily.</p>
+        </div>
+        <div style="width:23%; padding:20px;">
+            <h2>Premium Modules</h2>
+            <p>Access advanced tax, investment, and entity structuring tools.</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-elif page == "Investments":
-    st.header("Investment Projections")
-    with st.form("investment_form"):
-        current = st.number_input("Current Savings (ZAR)", value=0, step=1000)
-        annual = st.number_input("Annual Contribution (ZAR)", value=0, step=1000)
-        years = st.slider("Years", 1, 50, 20)
-        rate = st.slider("Expected Annual Return %", 0.0, 20.0, 8.0)/100
+# ----------------- Tax Optimization -----------------
+elif page=="Tax Optimization":
+    st.markdown("## Calculate Tax")
+    with st.form("tax_calc"):
+        income = st.text_input("Annual Income (ZAR)", value="500000", help="Enter your total annual income.")
+        age = st.text_input("Age", value="30", help="Your current age.")
+        retirement = st.text_input("Retirement Contributions (ZAR)", value="0", help="Contributions reduce taxable income.")
+        submitted = st.form_submit_button("Calculate Tax")
+    if submitted:
+        try:
+            tax_due = calculate_sa_tax(float(income.replace(",","")), int(age), float(retirement.replace(",","")))
+            st.success(f"Estimated Tax Due: ZAR {tax_due}")
+        except ValueError:
+            st.error("Please enter valid numeric values.")
+
+    st.markdown("## Suggestions to Reduce Tax")
+    with st.form("tax_suggestions"):
+        medical = st.text_input("Medical Aid Contributions (ZAR)", value="0")
+        donations = st.text_input("Donations (ZAR)", value="0")
+        owns_business = st.checkbox("Owns Business?")
+        submitted_sugg = st.form_submit_button("Show Suggestions")
+    if submitted_sugg:
+        try:
+            user_data = {
+                "income": float(income.replace(",","")),
+                "age": int(age),
+                "retirement_contributions": float(retirement.replace(",","")),
+                "medical_aid_contributions": float(medical.replace(",","")),
+                "donations": float(donations.replace(",","")),
+                "owns_business": owns_business
+            }
+            suggestions = suggest_optimizations(user_data)
+            for s in suggestions:
+                st.markdown(f"- **{s['action']}** ({s['saving']})")
+            if suggestions:
+                df = pd.DataFrame([{"Strategy": s['action'], "Potential Saving": s['saving']} for s in suggestions])
+                fig = px.bar(df, x="Strategy", y="Potential Saving", color="Potential Saving", title="Potential Savings by Strategy")
+                st.plotly_chart(fig, use_container_width=True)
+        except ValueError:
+            st.error("Please enter valid numeric values.")
+
+# ----------------- Investments -----------------
+elif page=="Investments":
+    st.markdown("## Investment Projections")
+    with st.form("invest_form"):
+        current = st.text_input("Current Savings (ZAR)", value="0")
+        annual = st.text_input("Annual Contribution (ZAR)", value="0")
+        years = st.slider("Years",1,50,20)
+        rate = st.slider("Expected Annual Return %",0.0,20.0,8.0)/100
         submitted = st.form_submit_button("Project Growth")
     if submitted:
-        proj = project_investments(current, annual, years, rate)
-        df = pd.DataFrame(proj)
-        st.line_chart(df.set_index("Year"))
-        st.table(df.tail(5))
+        try:
+            proj = project_investments(float(current.replace(",","")), float(annual.replace(",","")), years, rate)
+            df = pd.DataFrame(proj)
+            st.line_chart(df.set_index("Year"))
+            st.table(df.tail(5))
+        except ValueError:
+            st.error("Please enter valid numeric values.")
 
-elif page == "SME Dashboard":
-    st.header("SME Dashboard")
-    revenue = st.number_input("Annual Revenue (ZAR)", value=1000000, step=1000)
-    expenses = st.number_input("Annual Expenses (ZAR)", value=600000, step=1000)
-    profit = revenue - expenses
-    st.subheader(f"Estimated Profit: ZAR {profit}")
-    tax_due = calculate_sa_tax(profit)
-    st.subheader(f"Estimated Tax: ZAR {tax_due}")
-    st.markdown("Unlock Premium modules for advanced entity structuring, deductions, and projections.")
+# ----------------- SME Dashboard -----------------
+elif page=="SME Dashboard":
+    st.markdown("## SME Dashboard")
+    revenue = st.text_input("Annual Revenue (ZAR)", value="1000000")
+    expenses = st.text_input("Annual Expenses (ZAR)", value="600000")
+    if st.button("Calculate Profit"):
+        try:
+            profit = float(revenue.replace(",","")) - float(expenses.replace(",",""))
+            st.success(f"Estimated Profit: ZAR {profit}")
+            tax_due = calculate_sa_tax(profit)
+            st.info(f"Estimated Tax: ZAR {tax_due}")
+        except ValueError:
+            st.error("Please enter valid numeric values.")
 
-elif page == "Premium Modules":
-    st.header("Premium Modules")
+# ----------------- Premium Modules -----------------
+elif page=="Premium Modules":
+    st.markdown("## Premium Modules")
     if not st.session_state['premium']:
-        st.markdown("Premium subscription required.")
+        st.info("Activate Premium to unlock advanced features.")
         if st.button("Activate Premium (Sandbox)"):
             st.session_state['premium'] = True
             st.success("Premium Mode Activated!")
@@ -213,13 +256,11 @@ elif page == "Premium Modules":
         st.markdown("- Advanced Tax Deductions")
         st.markdown("- Scenario-based Investment Planning")
         st.markdown("- Detailed Projection Charts")
-        proj = project_investments(100000, 50000, 20, 0.12)
+        proj = project_investments(100000,50000,20,0.12)
         df = pd.DataFrame(proj)
-        fig = px.line(df, x="Year", y="Value", title="Premium Investment Growth Scenario")
-        st.plotly_chart(fig, use_container_width=True)
+        fig = px.line(df,x="Year",y="Value",title="Premium Investment Growth Scenario")
+        st.plotly_chart(fig,use_container_width=True)
 
-# =========================
-# Footer
-# =========================
+# ----------------- Footer -----------------
 st.markdown("---")
-st.markdown("<p style='text-align:center;color:#6B7280;'>FinAI - AI Financial Platform | Prototype Demo | Projections are for guidance only.</p>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;color:gray;'>FinAI - AI Financial Platform | Prototype Demo | All projections are for guidance only.</p>", unsafe_allow_html=True)
