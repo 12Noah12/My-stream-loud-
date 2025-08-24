@@ -10,15 +10,32 @@ import stripe
 # =========================
 st.set_page_config(page_title="FinAI - AI Financial Platform", layout="wide", initial_sidebar_state="expanded")
 
-# ✅ Load API keys from Streamlit Secrets (make sure to set them in Streamlit Cloud!)
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
-stripe.api_key = st.secrets["STRIPE_TEST_SECRET_KEY"]
+# =========================
+# Safe Secrets Handling
+# =========================
+def get_secret(key: str, fallback: str = None):
+    """Helper to safely fetch secrets"""
+    try:
+        return st.secrets[key]
+    except KeyError:
+        if fallback is not None:
+            return fallback
+        st.error(f"❌ Missing secret: `{key}`. Please set it in Streamlit Cloud → Settings → Secrets.")
+        st.stop()
 
-# Example product/price IDs (replace with real Stripe test IDs if you want checkout)
+# Load API keys
+OPENAI_KEY = get_secret("OPENAI_API_KEY")
+STRIPE_KEY = get_secret("STRIPE_TEST_SECRET_KEY")
+
+# Initialize clients
+client = OpenAI(api_key=OPENAI_KEY)
+stripe.api_key = STRIPE_KEY
+
+# Stripe IDs (replace with real ones)
 PRODUCT_ID = "prod_xxxxx"
 PRICE_ID = "price_xxxxx"
 
-# Session state for page navigation and premium
+# Session state for navigation
 if "page" not in st.session_state:
     st.session_state["page"] = "Home"
 if "premium" not in st.session_state:
@@ -40,7 +57,7 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("💡 **AI Assistant:** Ask questions or get guidance here.")
 
 # =========================
-# AI Assistant Function
+# AI Assistant
 # =========================
 def ai_chat():
     user_input = st.sidebar.text_input("Ask the AI Assistant")
@@ -55,7 +72,7 @@ def ai_chat():
                 answer = response.choices[0].message.content
                 st.sidebar.markdown(f"**AI Assistant:** {answer}")
             except Exception as e:
-                st.sidebar.error(f"Error: {e}")
+                st.sidebar.error(f"AI Error: {e}")
 
 ai_chat()
 
@@ -141,13 +158,8 @@ if page == "Home":
     """,
         unsafe_allow_html=True,
     )
-
     st.markdown('<div class="main-title">FinAI - Smart Finance Made Simple</div>', unsafe_allow_html=True)
-    st.markdown(
-        '<div class="sub-title">Your AI-powered platform for tax, investments & business growth</div>',
-        unsafe_allow_html=True,
-    )
-
+    st.markdown('<div class="sub-title">Your AI-powered platform for tax, investments & business growth</div>', unsafe_allow_html=True)
     st.image(
         "https://images.unsplash.com/photo-1581091012184-35f55b63b78c?crop=entropy&cs=tinysrgb&fit=max&fm=jpg&q=80&w=1080",
         use_column_width=True,
