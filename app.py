@@ -40,9 +40,13 @@ st.markdown(f"""
     .submit-button button:hover {{
         box-shadow: 0 0 20px #f2f2f2;
     }}
-    input[type=text] {{
+    input[type=text], input[type=number] {{
         font-size: 1.2em;
         padding: 0.5em;
+        color: black !important;
+    }}
+    .privacy-text {{
+        color: white;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -56,24 +60,25 @@ if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
+if 'advice' not in st.session_state:
+    st.session_state.advice = ""
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.title("Privacy Agreement")
+    st.title("Privacy Agreement", anchor=False)
     st.markdown("""
-    **Purpose:**  
-    This Privacy Agreement ensures all users understand how their data will be collected, stored, and used on FinAI.  
-
-    **Data Handling:**  
-    All information entered is stored securely on encrypted servers and may be used to generate personalized financial advice, reports, and improve user experience.  
-
-    **Legal Obligation:**  
-    By clicking 'Accept', you consent to the usage of your data as described and acknowledge this is a legally binding agreement.  
-    Non-acceptance will result in immediate termination of access. FinAI is not liable for any data misuse outside this platform.  
-
-    **Data Security:**  
+    <div class='privacy-text'>
+    **Purpose:**<br>
+    This Privacy Agreement ensures all users understand how their data will be collected, stored, and used on FinAI.<br><br>
+    **Data Handling:**<br>
+    All information entered is stored securely on encrypted servers and may be used to generate personalized financial advice, reports, and improve user experience.<br><br>
+    **Legal Obligation:**<br>
+    By clicking 'Accept', you consent to the usage of your data as described and acknowledge this is a legally binding agreement.<br>
+    Non-acceptance will result in immediate termination of access. FinAI is not liable for any data misuse outside this platform.<br><br>
+    **Data Security:**<br>
     Data will not be shared without explicit consent. Industry-standard security protocols are in place to prevent unauthorized access.
-    """)
+    </div>
+    """, unsafe_allow_html=True)
     accept = st.checkbox("I accept the privacy agreement")
     if accept:
         st.session_state.privacy_accepted = True
@@ -123,14 +128,14 @@ def select_user_type():
     if col1.button("Individual", key="indiv_btn"):
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
-        st.experimental_rerun()
     if col2.button("Household", key="house_btn"):
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
-        st.experimental_rerun()
     if col3.button("Business", key="bus_btn"):
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
+    # Only rerun after setting the page to prevent AttributeError
+    if st.session_state.page == 'dashboard' and st.session_state.user_type:
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
@@ -152,15 +157,15 @@ def dashboard():
         inputs['Employees'] = st.number_input("Number of Employees", min_value=0, format="%d")
 
     if st.button("Get Personalized Advice"):
-        advice = generate_advice_gpt(user_type, inputs)
-        st.info(advice)
+        st.session_state.advice = generate_advice_gpt(user_type, inputs)
+        st.info(st.session_state.advice)
 
     if st.button("Download PDF Report"):
-        pdf_bytes = create_pdf(inputs, user_type, advice)
+        pdf_bytes = create_pdf(inputs, user_type, st.session_state.advice)
         st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
 
     if st.button("Download Excel Report"):
-        excel_bytes = create_excel(inputs, user_type, advice)
+        excel_bytes = create_excel(inputs, user_type, st.session_state.advice)
         st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
 
 # ---------------- GPT ADVICE ----------------
