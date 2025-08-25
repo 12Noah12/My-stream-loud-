@@ -18,6 +18,7 @@ if "ai_query" not in st.session_state:
 st.markdown("""
 <style>
 .block-container { padding-top: 6rem; }
+
 .navbar { position: fixed; top: 0; left: 0; width: 100%; background: rgba(255,255,255,0.95); 
 backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding:0.7rem 1.5rem; 
 display:flex; justify-content:space-between; align-items:center; z-index:1000; }
@@ -26,21 +27,23 @@ display:flex; justify-content:space-between; align-items:center; z-index:1000; }
 .nav-button button { background:none; border:none; font-weight:600; padding:0.3rem 0.8rem;
 border-radius:6px; cursor:pointer; transition: background 0.3s;}
 .nav-button button:hover { background: rgba(37,99,235,0.1);}
-.ai-search-container { display:flex; justify-content:center; margin-top:3rem; }
+
+.ai-search-container { display:flex; justify-content:center; margin-top:3rem; position:relative; }
 .ai-search-input { font-weight:700; font-size:1.3rem; border:3px solid #2563eb; border-radius:15px;
 padding:1rem 1.5rem; width:60%; text-align:left; box-shadow:0 0 20px rgba(37,99,235,0.4);
 transition: box-shadow 0.3s, transform 0.3s; }
-.ai-search-button { margin-left: -45px; background:none; border:none; font-size:1.5rem; cursor:pointer;}
+.ai-search-button { position:absolute; right:18%; top:12px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#2563eb; }
+
 .ai-search-input:focus { outline:none; box-shadow:0 0 40px rgba(37,99,235,0.8); transform:scale(1.02);}
+@keyframes glow {
+    0% { box-shadow: 0 0 15px rgba(37,99,235,0.5);}
+    50% { box-shadow: 0 0 40px rgba(37,99,235,0.9);}
+    100% { box-shadow: 0 0 15px rgba(37,99,235,0.5);}
+}
+.glow { animation: glow 2s infinite; }
+
 </style>
 """, unsafe_allow_html=True)
-
-# ---------------- SESSION RESET ----------------
-def reset_app():
-    st.session_state.user_type = None
-    st.session_state.page = "home"
-    st.session_state.ai_query = ""
-    st.experimental_rerun()
 
 # ---------------- USER TYPE SELECTION ----------------
 def select_user_type():
@@ -50,15 +53,14 @@ def select_user_type():
         if st.button("👔 Business"):
             st.session_state.user_type = "business"
             st.session_state.page = "home"
-            st.experimental_rerun()
     with col2:
         if st.button("🏠 Family"):
             st.session_state.user_type = "family"
             st.session_state.page = "home"
-            st.experimental_rerun()
-    st.stop()
+    if st.session_state.user_type is None:
+        st.stop()
 
-# ---------------- PAGE DEFINITIONS ----------------
+# ---------------- PAGE DICTIONARY ----------------
 def get_pages():
     if st.session_state.user_type == "business":
         return {
@@ -83,7 +85,7 @@ def get_pages():
 # ---------------- NAVBAR ----------------
 def show_navbar(pages):
     if not pages:
-        return  # don't show navbar if pages is None
+        return
     cols = st.columns(len(pages))
     for idx, (key, name) in enumerate(pages.items()):
         with cols[idx]:
@@ -94,8 +96,8 @@ def show_navbar(pages):
 def ai_search():
     st.markdown('<div class="ai-search-container">', unsafe_allow_html=True)
     with st.form("ai_form"):
-        query = st.text_input("", st.session_state.ai_query, placeholder="🔍 Ask FinAI anything...", key="ai_input")
-        submitted = st.form_submit_button("Go")
+        query = st.text_input("", st.session_state.ai_query, placeholder="🔍 Ask FinAI anything...", key="ai_input", label_visibility="collapsed")
+        submitted = st.form_submit_button("🔍")
         if submitted and query:
             st.session_state.ai_query = query.lower()
             pages = get_pages()
@@ -118,7 +120,7 @@ def ai_search():
             st.experimental_rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------------- PAGES ----------------
+# ---------------- PAGE FUNCTIONS ----------------
 def show_home():
     st.markdown("### Welcome to FinAI! 💡")
     st.write("Use the AI search bar above to navigate or select modules below.")
@@ -139,7 +141,7 @@ def show_family_tax():
     deductions = st.number_input("Deductions (R)", 0.0, 150000.0)
     taxable_income = max(0, salary + other_income - deductions)
     st.write(f"Taxable Income: R{taxable_income:,.2f}")
-    st.write(f"Estimated Tax Owed: R{taxable_income*0.25:,.2f}")  # simple flat 25% for example
+    st.write(f"Estimated Tax Owed: R{taxable_income*0.25:,.2f}")  # flat 25%
 
 def show_sme():
     st.subheader("SME Dashboard")
@@ -177,13 +179,14 @@ def show_premium():
     st.write("Advanced analytics, AI-driven recommendations, charts, and simulations.")
 
 # ---------------- MAIN ----------------
+if st.session_state.user_type is None:
+    select_user_type()
+
 pages = get_pages()
 show_navbar(pages)
 ai_search()
 
-if st.session_state.page == "home" and st.session_state.user_type is None:
-    select_user_type()
-elif st.session_state.page == "home":
+if st.session_state.page == "home":
     show_home()
 elif st.session_state.page == "business_tax":
     show_business_tax()
