@@ -30,18 +30,25 @@ border-radius:6px; cursor:pointer; transition: background 0.3s;}
 
 .ai-search-container { display:flex; justify-content:center; margin-top:3rem; position:relative; }
 .ai-search-input { font-weight:700; font-size:1.3rem; border:3px solid #2563eb; border-radius:15px;
-padding:1rem 1.5rem; width:60%; text-align:left; box-shadow:0 0 20px rgba(37,99,235,0.4);
-transition: box-shadow 0.3s, transform 0.3s; }
+padding:1rem 1.5rem; width:60%; text-align:left; transition: box-shadow 0.3s, transform 0.3s; }
 .ai-search-button { position:absolute; right:18%; top:12px; background:none; border:none; font-size:1.5rem; cursor:pointer; color:#2563eb; }
 
-.ai-search-input:focus { outline:none; box-shadow:0 0 40px rgba(37,99,235,0.8); transform:scale(1.02);}
+/* Glow effect animation */
 @keyframes glow {
     0% { box-shadow: 0 0 15px rgba(37,99,235,0.5);}
     50% { box-shadow: 0 0 40px rgba(37,99,235,0.9);}
     100% { box-shadow: 0 0 15px rgba(37,99,235,0.5);}
 }
-.glow { animation: glow 2s infinite; }
+.ai-search-input.glow:focus {
+    animation: glow 1.5s infinite;
+    transform: scale(1.02);
+    outline:none;
+}
 
+body {
+    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+    color: white;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -96,7 +103,13 @@ def show_navbar(pages):
 def ai_search():
     st.markdown('<div class="ai-search-container">', unsafe_allow_html=True)
     with st.form("ai_form"):
-        query = st.text_input("", st.session_state.ai_query, placeholder="🔍 Ask FinAI anything...", key="ai_input", label_visibility="collapsed")
+        query = st.text_input(
+            "", st.session_state.ai_query,
+            placeholder="🔍 Ask FinAI anything...",
+            key="ai_input",
+            label_visibility="collapsed",
+            help="Type keywords like 'tax', 'investment', 'SME', 'estate', or 'premium'."
+        )
         submitted = st.form_submit_button("🔍")
         if submitted and query:
             st.session_state.ai_query = query.lower()
@@ -117,8 +130,14 @@ def ai_search():
                     break
             if not redirected:
                 st.warning("No matching module found. Try keywords like 'tax', 'investment', 'SME', 'estate', 'premium'.")
-            st.experimental_rerun()
     st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------------- HELPER TO PARSE INPUT ----------------
+def parse_float_input(text, default=0.0):
+    try:
+        return float(text)
+    except:
+        return default
 
 # ---------------- PAGE FUNCTIONS ----------------
 def show_home():
@@ -127,8 +146,8 @@ def show_home():
 
 def show_business_tax():
     st.subheader("Business Tax Optimization")
-    revenue = st.number_input("Annual Revenue (R)", 0.0, 1000000.0, help="Total revenue for the year")
-    expenses = st.number_input("Total Expenses (R)", 0.0, 500000.0, help="Deductible business expenses")
+    revenue = parse_float_input(st.text_input("Annual Revenue (R)", "0", help="Total revenue for the year"))
+    expenses = parse_float_input(st.text_input("Total Expenses (R)", "0", help="Deductible business expenses"))
     profit = revenue - expenses
     st.write(f"Profit: R{profit:,.2f}")
     tax_rate = 0.28 if profit > 1000000 else 0.15
@@ -136,27 +155,27 @@ def show_business_tax():
 
 def show_family_tax():
     st.subheader("Family Tax Optimization")
-    salary = st.number_input("Annual Salary (R)", 0.0, 2000000.0)
-    other_income = st.number_input("Other Income (R)", 0.0, 500000.0)
-    deductions = st.number_input("Deductions (R)", 0.0, 150000.0)
+    salary = parse_float_input(st.text_input("Annual Salary (R)", "0"))
+    other_income = parse_float_input(st.text_input("Other Income (R)", "0"))
+    deductions = parse_float_input(st.text_input("Deductions (R)", "0"))
     taxable_income = max(0, salary + other_income - deductions)
     st.write(f"Taxable Income: R{taxable_income:,.2f}")
     st.write(f"Estimated Tax Owed: R{taxable_income*0.25:,.2f}")  # flat 25%
 
 def show_sme():
     st.subheader("SME Dashboard")
-    employees = st.number_input("Number of Employees", 0, 1000, 10)
-    avg_salary = st.number_input("Average Monthly Salary (R)", 0.0, 20000.0)
+    employees = int(parse_float_input(st.text_input("Number of Employees", "0")))
+    avg_salary = parse_float_input(st.text_input("Average Monthly Salary (R)", "0"))
     monthly_expense = employees * avg_salary
     st.write(f"Total Monthly Payroll: R{monthly_expense:,.2f}")
     st.write(f"Annual Payroll: R{monthly_expense*12:,.2f}")
 
 def show_investments():
     st.subheader("Investment Growth Simulator")
-    principal = st.number_input("Initial Investment (R)", 0.0, 1000000.0)
-    monthly = st.number_input("Monthly Contribution (R)", 0.0, 50000.0)
-    years = st.number_input("Investment Period (Years)", 1, 50, 10)
-    rate = st.slider("Expected Annual Return (%)", 0.0, 20.0, 7.0)/100
+    principal = parse_float_input(st.text_input("Initial Investment (R)", "0"))
+    monthly = parse_float_input(st.text_input("Monthly Contribution (R)", "0"))
+    years = int(parse_float_input(st.text_input("Investment Period (Years)", "10")))
+    rate = float(parse_float_input(st.text_input("Expected Annual Return (%)", "7")))/100
     months = years*12
     balances = []
     balance = principal
@@ -170,8 +189,8 @@ def show_investments():
 
 def show_estate():
     st.subheader("Estate Planning")
-    estate_value = st.number_input("Total Estate Value (R)", 0.0, 5000000.0)
-    heirs = st.number_input("Number of Heirs", 1, 50, 2)
+    estate_value = parse_float_input(st.text_input("Total Estate Value (R)", "0"))
+    heirs = int(parse_float_input(st.text_input("Number of Heirs", "1")))
     st.write(f"Estimated Amount per Heir: R{estate_value/heirs:,.2f}")
 
 def show_premium():
@@ -192,10 +211,10 @@ elif st.session_state.page == "business_tax":
     show_business_tax()
 elif st.session_state.page == "family_tax":
     show_family_tax()
-elif st.session_state.page == "investments":
-    show_investments()
 elif st.session_state.page == "sme":
     show_sme()
+elif st.session_state.page == "investments":
+    show_investments()
 elif st.session_state.page == "estate":
     show_estate()
 elif st.session_state.page == "premium":
