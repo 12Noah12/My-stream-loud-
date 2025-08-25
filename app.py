@@ -8,7 +8,7 @@ st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
 # ---------------- SESSION STATE ----------------
 if "user_type" not in st.session_state:
-    st.session_state.user_type = None
+    st.session_state.user_type = None  # business/family
 if "page" not in st.session_state:
     st.session_state.page = "home"
 if "ai_query" not in st.session_state:
@@ -16,22 +16,26 @@ if "ai_query" not in st.session_state:
 
 # ---------------- USER TYPE SELECTION ----------------
 if st.session_state.user_type is None:
-    st.title("Welcome to FinAI! 💡")
-    st.write("Please select your user type to see relevant tools:")
+    st.markdown("<h1 style='text-align:center;'>Welcome to FinAI! 💡</h1>", unsafe_allow_html=True)
+    st.markdown("<p style='text-align:center;'>Please select your user type to see relevant tools:</p>", unsafe_allow_html=True)
+
     col1, col2 = st.columns(2)
-    
+
     with col1:
         if st.button("👔 Business"):
             st.session_state.user_type = "business"
             st.session_state.page = "home"
-    
+            st.experimental_rerun()
+
     with col2:
         if st.button("🏠 Family"):
             st.session_state.user_type = "family"
             st.session_state.page = "home"
-    st.stop()  # Wait for selection
+            st.experimental_rerun()
 
-# ---------------- NAVIGATION PAGES ----------------
+    st.stop()
+
+# ---------------- PAGES ----------------
 if st.session_state.user_type == "business":
     PAGES = {
         "home": "Home",
@@ -49,27 +53,6 @@ elif st.session_state.user_type == "family":
         "estate": "Estate Planning",
         "premium": "Premium Modules"
     }
-
-# ---------------- BACKGROUND STYLES ----------------
-BG_STYLES = {
-    "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
-    "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
-    "family_tax": "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)",
-    "investments": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)",
-    "sme": "linear-gradient(135deg, #485563 0%, #29323c 100%)",
-    "estate": "linear-gradient(135deg, #8e44ad 0%, #6c3483 100%)",
-    "premium": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
-}
-
-SECTION_TEXT = {
-    "home": "👋 Welcome to FinAI! Ask me anything below.",
-    "business_tax": "💼 Optimize your business taxes efficiently.",
-    "family_tax": "🏠 Optimize your family taxes with AI guidance.",
-    "investments": "📈 Grow your wealth with AI-guided investments.",
-    "sme": "🏢 Manage your business efficiently with our SME tools.",
-    "estate": "⚖️ Plan your estate and inheritance smartly.",
-    "premium": "🌟 Unlock powerful premium features here."
-}
 
 # ---------------- CSS ----------------
 st.markdown("""
@@ -107,37 +90,67 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # ---------------- BACKGROUND ----------------
-st.markdown(f"""
-<style>
-body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}
-</style>
-""", unsafe_allow_html=True)
+BG_STYLES = {
+    "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
+    "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
+    "family_tax": "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)",
+    "investments": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)",
+    "sme": "linear-gradient(135deg, #485563 0%, #29323c 100%)",
+    "estate": "linear-gradient(135deg, #8e44ad 0%, #6c3483 100%)",
+    "premium": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
+}
+st.markdown(f"<style>body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}</style>", unsafe_allow_html=True)
 
 # ---------------- PAGE TITLE ----------------
+SECTION_TEXT = {
+    "home": "👋 Welcome to FinAI! Ask me anything below.",
+    "business_tax": "💼 Optimize your business taxes efficiently.",
+    "family_tax": "🏠 Optimize your family taxes with AI guidance.",
+    "investments": "📈 Grow your wealth with AI-guided investments.",
+    "sme": "🏢 Manage your business efficiently with our SME tools.",
+    "estate": "⚖️ Plan your estate and inheritance smartly.",
+    "premium": "🌟 Unlock powerful premium features here."
+}
 st.title(PAGES[st.session_state.page])
 st.write(SECTION_TEXT[st.session_state.page])
 
-# ---------------- HOME PAGE WITH FUNCTIONAL AI SEARCH ----------------
+# ---------------- HOME PAGE ----------------
 if st.session_state.page == "home":
+    # AI search bar container
     with st.form("ai_form"):
         query = st.text_input("🔍 Ask FinAI anything...", st.session_state.ai_query)
         submitted = st.form_submit_button("Submit")
         if submitted and query:
-            st.session_state.ai_query = query
-            st.success(f"You asked: {query}")
+            st.session_state.ai_query = query.lower()
+            # Simple routing based on keywords
+            if any(x in st.session_state.ai_query for x in ["business tax", "tax optimization"]):
+                st.session_state.page = "business_tax"
+            elif any(x in st.session_state.ai_query for x in ["family tax", "tax deduction"]):
+                st.session_state.page = "family_tax"
+            elif any(x in st.session_state.ai_query for x in ["investment", "invest"]):
+                st.session_state.page = "investments"
+            elif any(x in st.session_state.ai_query for x in ["sme", "small business"]):
+                st.session_state.page = "sme"
+            elif any(x in st.session_state.ai_query for x in ["estate", "inheritance"]):
+                st.session_state.page = "estate"
+            elif any(x in st.session_state.ai_query for x in ["premium"]):
+                st.session_state.page = "premium"
+            else:
+                st.warning("No matching module found. Try keywords like 'tax', 'investment', 'SME', 'estate'.")
+            st.experimental_rerun()
 
-# ---------------- BUSINESS TAX OPTIMIZATION ----------------
+# ---------------- BUSINESS TAX ----------------
 if st.session_state.page == "business_tax":
     st.subheader("Business Tax Optimization Calculator")
     revenue = st.number_input("Annual Revenue (R)", min_value=0.0, value=100000.0, help="Total revenue for the year")
     expenses = st.number_input("Total Expenses (R)", min_value=0.0, value=50000.0, help="Deductible business expenses")
     profit = revenue - expenses
     st.write(f"**Profit:** R{profit:,.2f}")
-    tax_rate = 0.28 if profit > 1000000 else 0.0
+    tax_rate = 0.28 if profit > 1000000 else 0.15
     tax_payable = profit * tax_rate
     st.write(f"**Estimated Tax Payable:** R{tax_payable:,.2f} at {tax_rate*100}% rate")
 
-# ---------------- FAMILY TAX OPTIMIZATION ----------------
+# ---------------- FAMILY TAX ----------------
 if st.session_state.page == "family_tax":
     st.subheader("Family Tax Optimization Calculator")
     salary = st.number_input("Annual Salary (R)", min_value=0.0, value=350000.0)
@@ -153,7 +166,7 @@ if st.session_state.page == "family_tax":
                 (1817001, np.inf, 0.45, 644489)]
     tax_owed = 0
     for low, high, rate, base in brackets:
-        if taxable_income >= low and taxable_income <= high:
+        if low <= taxable_income <= high:
             tax_owed = base + (taxable_income - low) * rate
             break
     st.write(f"**Taxable Income:** R{taxable_income:,.2f}")
@@ -163,39 +176,38 @@ if st.session_state.page == "family_tax":
 if st.session_state.page == "investments":
     st.subheader("Investment Growth Simulator")
     principal = st.number_input("Initial Investment (R)", min_value=0.0, value=100000.0)
-    monthly = st.number_input("Monthly Contribution (R)", min_value=0.0, value=2000.0)
-    years = st.number_input("Years", min_value=1, value=10)
-    risk = st.selectbox("Risk Profile", ["Conservative (5%)", "Moderate (7%)", "Aggressive (10%)"])
-    rate_map = {"Conservative (5%)":0.05, "Moderate (7%)":0.07, "Aggressive (10%)":0.10}
-    rate = rate_map[risk]
+    monthly = st.number_input("Monthly Contribution (R)", min_value=0.0, value=5000.0)
+    years = st.number_input("Investment Period (Years)", min_value=1, value=10)
+    rate = st.slider("Expected Annual Return (%)", 0.0, 20.0, 7.0)/100
     months = years*12
-    balance = []
-    total = principal
-    for m in range(months):
-        total = total*(1+rate/12) + monthly
-        balance.append(total)
-    df = pd.DataFrame({"Month": list(range(1, months+1)), "Balance": balance})
-    fig = px.line(df, x="Month", y="Balance", title="Projected Investment Growth")
+    balances = []
+    balance = principal
+    for m in range(1, months+1):
+        balance += monthly
+        balance *= (1 + rate/12)
+        balances.append(balance)
+    df_inv = pd.DataFrame({"Month": list(range(1, months+1)), "Balance": balances})
+    fig = px.line(df_inv, x="Month", y="Balance", title="Investment Growth Over Time")
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- SME DASHBOARD ----------------
-if st.session_state.page == "sme" and st.session_state.user_type=="business":
+if st.session_state.user_type == "business" and st.session_state.page == "sme":
     st.subheader("SME Dashboard")
-    employees = st.number_input("Number of Employees", min_value=0, value=5)
-    revenue = st.number_input("Monthly Revenue (R)", min_value=0.0, value=50000.0)
-    expenses = st.number_input("Monthly Expenses (R)", min_value=0.0, value=30000.0)
-    profit = revenue - expenses
-    st.write(f"**Monthly Profit:** R{profit:,.2f}")
+    employees = st.number_input("Number of Employees", min_value=0, value=10)
+    avg_salary = st.number_input("Average Monthly Salary (R)", min_value=0.0, value=20000.0)
+    monthly_expense = employees * avg_salary
+    st.write(f"**Total Monthly Payroll:** R{monthly_expense:,.2f}")
+    st.write(f"**Annual Payroll:** R{monthly_expense*12:,.2f}")
 
 # ---------------- ESTATE PLANNING ----------------
 if st.session_state.page == "estate":
     st.subheader("Estate Planning Calculator")
     estate_value = st.number_input("Total Estate Value (R)", min_value=0.0, value=2000000.0)
     heirs = st.number_input("Number of Heirs", min_value=1, value=2)
-    inheritance_per_heir = estate_value/heirs
-    st.write(f"**Each heir receives:** R{inheritance_per_heir:,.2f}")
+    per_heir = estate_value / heirs
+    st.write(f"**Estimated Amount per Heir:** R{per_heir:,.2f}")
 
 # ---------------- PREMIUM MODULES ----------------
 if st.session_state.page == "premium":
-    st.subheader("Premium AI Modules")
-    st.write("Advanced analytics, predictive simulations, and professional reporting included here.")
+    st.subheader("Premium Modules")
+    st.write("Advanced analytics, charts, AI recommendations coming here.")
