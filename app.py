@@ -3,15 +3,19 @@ import random
 from dataclasses import dataclass
 from typing import List, Tuple
 
-# Safe import for matplotlib: if missing, show message and stop to avoid crashes
+# Robust matplotlib import (non-crashing on Streamlit Cloud)
 try:
     import matplotlib.pyplot as plt
-    MATPLOTLIB_OK = True
-except Exception as e:
-    MATPLOTLIB_OK = False
-    plt = None
-    st.error("Matplotlib is not installed. Add `matplotlib` to requirements.txt and redeploy.")
-    st.stop()
+    HAS_MPL = True
+except Exception:
+    HAS_MPL = False
+    # create a dummy object so later code using plt won't crash
+    class _DummyPLT:
+        def __getattr__(self, _):
+            def _noop(*args, **kwargs):
+                st.warning(\"Matplotlib is not installed. Add `matplotlib` to requirements.txt to enable charts.\")
+            return _noop
+    plt = _DummyPLT()
 import numpy as np
 import pandas as pd
 import streamlit as st
