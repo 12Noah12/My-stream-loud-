@@ -17,12 +17,12 @@ if st.session_state.user_type is None:
     st.title("Welcome to FinAI! 💡")
     st.write("Please select your user type to see relevant tools:")
     col1, col2 = st.columns(2)
-    business_clicked = col1.button("👔 Business")
-    family_clicked = col2.button("🏠 Family")
-    if business_clicked:
+    
+    if col1.button("👔 Business"):
         st.session_state.user_type = "business"
         st.experimental_rerun()
-    if family_clicked:
+    
+    if col2.button("🏠 Family"):
         st.session_state.user_type = "family"
         st.experimental_rerun()
 
