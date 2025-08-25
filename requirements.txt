@@ -9,3 +9,5 @@ matplotlib
 Pillow
 xlsxwriter
 reportlab
+fpdf
+openpyxl
