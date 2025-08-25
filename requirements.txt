@@ -5,3 +5,4 @@ plotly
 openai
 stripe
 python-dotenv
+matplotlib
