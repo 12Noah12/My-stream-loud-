@@ -123,7 +123,7 @@ with st.container():
     <div class="navbar">
         <div class="logo">💡 FinAI</div>
         <div class="nav-links">
-            {''.join([f'<span class="nav-button"><button onclick="window.parent.postMessage({{page: \'{k}\' }}, \'*\')">{v}</button></span>' for k,v in PAGES.items()])}
+            {''.join([f'<span class="nav-button"><button onclick="window.parent.postMessage({{{{page: \'{k}\'}}}}, \'*\')">{v}</button></span>' for k,v in PAGES.items()])}
         </div>
         <div class="dots">⋮</div>
     </div>
@@ -208,52 +208,38 @@ if st.session_state.page == "investments":
 # ---------------- SME DASHBOARD ----------------
 if st.session_state.page == "sme":
     st.header("SME Dashboard 🏢")
-    for var in ["revenue","expenses","marketing","operations","profit"]:
+    for var in ["revenue_sme","expenses_sme","staff_count","growth_rate"]:
         if var not in st.session_state:
             st.session_state[var] = 0
     with st.form("sme_form"):
-        st.session_state.revenue = st.number_input("Revenue ($)", value=st.session_state.revenue, min_value=0, help="Total business revenue")
-        st.session_state.expenses = st.number_input("Expenses ($)", value=st.session_state.expenses, min_value=0, help="Operational expenses")
-        st.session_state.marketing = st.number_input("Marketing Expenses ($)", value=st.session_state.marketing, min_value=0, help="Marketing & advertising spend")
-        st.session_state.operations = st.number_input("Operations Expenses ($)", value=st.session_state.operations, min_value=0, help="Other operational costs")
-        submit_sme = st.form_submit_button("Calculate KPIs")
+        st.session_state.revenue_sme = st.number_input("Revenue ($)", value=st.session_state.revenue_sme, min_value=0, help="Total business revenue")
+        st.session_state.expenses_sme = st.number_input("Expenses ($)", value=st.session_state.expenses_sme, min_value=0, help="Total expenses")
+        st.session_state.staff_count = st.number_input("Number of Staff", value=st.session_state.staff_count, min_value=0, help="Total employees")
+        st.session_state.growth_rate = st.number_input("Expected Growth Rate (%)", value=st.session_state.growth_rate, min_value=0.0, help="Expected business growth rate")
+        submit_sme = st.form_submit_button("Run SME Analysis")
     if submit_sme:
-        st.session_state.profit = st.session_state.revenue - st.session_state.expenses
-        st.success(f"Profit: ${st.session_state.profit:,.2f}")
-        fig = px.bar(
-            x=["Marketing","Operations","Profit"],
-            y=[st.session_state.marketing,st.session_state.operations,st.session_state.profit],
-            title="SME Allocation"
-        )
-        st.plotly_chart(fig)
+        st.success(f"Estimated Profit: ${st.session_state.revenue_sme - st.session_state.expenses_sme:,.2f}")
+        st.info(f"Staff Efficiency: {st.session_state.revenue_sme/st.session_state.staff_count if st.session_state.staff_count>0 else 0:,.2f} per employee")
+        st.info(f"Projected Growth Next Year: {st.session_state.revenue_sme*(1+st.session_state.growth_rate/100):,.2f}")
 
 # ---------------- ESTATE PLANNING ----------------
 if st.session_state.page == "estate":
     st.header("Estate Planning ⚖️")
-    for var in ["total_estate","num_heirs","estate_tax_rate","special_allocations"]:
+    for var in ["total_assets","liabilities","beneficiaries_count"]:
         if var not in st.session_state:
             st.session_state[var] = 0
     with st.form("estate_form"):
-        st.session_state.total_estate = st.number_input("Total Estate ($)", value=st.session_state.total_estate, min_value=0, help="Total estate value")
-        st.session_state.num_heirs = st.number_input("Number of Heirs", value=st.session_state.num_heirs, min_value=1, help="Total number of heirs")
-        st.session_state.estate_tax_rate = st.number_input("Estate Tax Rate (%)", value=st.session_state.estate_tax_rate, min_value=0.0, max_value=100.0, help="Applicable estate tax rate")
-        st.session_state.special_allocations = st.text_input("Special Allocations (Heir:Amount, ...)", value=st.session_state.special_allocations, help="Specify any special inheritance allocations")
-        submit_estate = st.form_submit_button("Calculate Inheritance")
+        st.session_state.total_assets = st.number_input("Total Assets ($)", value=st.session_state.total_assets, min_value=0, help="Value of all your assets")
+        st.session_state.liabilities = st.number_input("Liabilities ($)", value=st.session_state.liabilities, min_value=0, help="Outstanding debts")
+        st.session_state.beneficiaries_count = st.number_input("Number of Beneficiaries", value=st.session_state.beneficiaries_count, min_value=1, help="Number of people to inherit assets")
+        submit_estate = st.form_submit_button("Calculate Shares")
     if submit_estate:
-        base_amount = st.session_state.total_estate*(1 - st.session_state.estate_tax_rate/100)/st.session_state.num_heirs
-        inheritance = {f"Heir {i+1}": base_amount for i in range(st.session_state.num_heirs)}
-        try:
-            for item in st.session_state.special_allocations.split(","):
-                if ":" in item:
-                    heir, amt = item.split(":")
-                    inheritance[heir.strip()] = float(amt.strip())
-        except:
-            st.warning("Special allocations format incorrect. Use Heir:Amount,Heir2:Amount2")
-        st.success("Inheritance Calculated")
-        df = pd.DataFrame({"Heir": list(inheritance.keys()), "Amount": list(inheritance.values())})
-        fig = px.pie(df, names="Heir", values="Amount", title="Estate Distribution", hole=0.3)
-        st.plotly_chart(fig)
+        net_worth = st.session_state.total_assets - st.session_state.liabilities
+        share = net_worth / st.session_state.beneficiaries_count if st.session_state.beneficiaries_count>0 else 0
+        st.success(f"Net Estate Value: ${net_worth:,.2f}")
+        st.info(f"Each Beneficiary Share: ${share:,.2f}")
 
 # ---------------- PREMIUM MODULE ----------------
 if st.session_state.page == "premium":
-    st.subheader("Premium Modules Coming Soon 🚀")
+    st.header("Premium AI Modules 🌟")
+    st.info("Coming Soon 🚀")
