@@ -3,19 +3,31 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from PIL import Image
 import xlsxwriter
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 import io
 import openai
-import math
 import textwrap
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
-# ---------------- STYLES (ensure readability over background) ----------------
+# ---------------- CURRENT MARKET SNAPSHOT (embedded) ----------------
+# This snapshot was collected when the assistant generated this file.
+MARKET_OVERVIEW = (
+    "Market snapshot (context for advice):\n\n"
+    "• Central banks (notably the U.S. Fed) have signalled a more dovish stance recently, "
+    "which lifted equities and lowered short-term yields — markets are pricing in possible rate cuts in coming months.\n\n"
+    "• The IMF has nudged up global growth forecasts for 2025 but warns that trade tensions and tariffs are a material downside risk.\n\n"
+    "• Large asset managers caution that while equities may perform well over the medium term, valuations are concentrated in a few mega-cap names, "
+    "so diversification and selective exposure are important.\n\n"
+    "• Strategists recommend a cautious, diversified approach: focus on quality growth where valuations are reasonable, consider inflation-protected and "
+    "real-assets exposure, and maintain liquidity buffers until clearer macro signals emerge.\n\n"
+    "Sources: Reuters, AP, IMF, BlackRock, Morningstar (summarized)."
+)
+
+# ---------------- STYLING & CONTRAST ----------------
 BG_IMAGE_URL = "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1470&q=80"
 st.markdown(f"""
     <style>
@@ -24,370 +36,347 @@ st.markdown(f"""
         background-size: cover;
         background-position: center;
     }}
-    .content-box {{
-        background-color: rgba(255,255,255,0.92);
+    /* content panels (white translucent) for contrast */
+    .panel {{
+        background: rgba(255,255,255,0.96);
         padding: 18px;
         border-radius: 10px;
         color: #111;
     }}
-    .header-text {{ color: #111 !important; }}
-    .category-btn button {{ color: #000 !important; font-weight:700; }}
-    .submit-btn button {{ color: #000 !important; font-weight:700; background:#E6E6E6; border-radius:8px; }}
-    .privacy-text {{ color: #fff; line-height:1.5; }}
-    .tooltip {{ color: #666; font-size:0.9em; }}
+    .small-muted {{ color:#555; font-size:0.9em; }}
+    .btn-black button {{ color: black !important; font-weight:700; }}
+    .search-glow input {{ box-shadow: 0 0 12px rgba(79, 195, 86, 0.45); border-radius:8px; padding:10px; }}
     </style>
 """, unsafe_allow_html=True)
 
-# ---------------- SESSION INIT ----------------
+# ---------------- SESSION STATE ----------------
 if "page" not in st.session_state:
     st.session_state.page = "home"
 if "privacy_accepted" not in st.session_state:
     st.session_state.privacy_accepted = False
-# per-type stored inputs
+if "user_type" not in st.session_state:
+    st.session_state.user_type = "individual"
+# inputs per type
 if "individual_inputs" not in st.session_state:
-    st.session_state.individual_inputs = {}
+    st.session_state.individual_inputs = {"Income": 0.0, "Deductions": 0.0}
 if "household_inputs" not in st.session_state:
-    st.session_state.household_inputs = {}
+    st.session_state.household_inputs = {"Household Income": 0.0, "Children": 0, "Deductions": 0.0}
 if "business_inputs" not in st.session_state:
-    st.session_state.business_inputs = {}
+    st.session_state.business_inputs = {"Revenue": 0.0, "Expenses": 0.0, "Employees": 0}
 if "advice_text" not in st.session_state:
     st.session_state.advice_text = ""
 
-# ---------------- PRIVACY AGREEMENT ----------------
-def show_privacy_agreement():
-    st.markdown("<div class='content-box'>", unsafe_allow_html=True)
-    st.markdown("<h2 class='header-text'>Privacy & Data Agreement</h2>", unsafe_allow_html=True)
+# ---------------- PRIVACY AGREEMENT (white font) ----------------
+def show_privacy_and_block():
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.markdown("<h2 style='color:#fff;'>Privacy & Data Agreement</h2>", unsafe_allow_html=True)
     st.markdown("""
-    <div class='privacy-text'>
-    <p>
-    This site (FinAI) collects and processes personal and financial information you provide for the purpose of generating personalised financial, tax and investment advice.
-    By selecting <strong>Accept</strong> you confirm you understand and consent to:
-    </p>
-    <ul>
-      <li>Storage of the data you provide on secure, encrypted servers for the purpose of generating advice, reports, and contacting you if requested.</li>
-      <li>Use of aggregated, anonymized data to improve FinAI models and services.</li>
-      <li>That FinAI and its agents do not accept liability for decisions made solely on the basis of the automated advice — professional implementation is required.</li>
-      <li>This agreement is legally binding. If you do not accept, you will not be permitted to use the platform and will be redirected off the app.</li>
-    </ul>
-    <p>FinAI will not sell your personal data and will only share information with third parties with your explicit consent or if required by law.</p>
-    </div>
+        <div style='color:white; line-height:1.4'>
+        <p><strong>Purpose:</strong> This platform (FinAI) collects the financial information you provide in order to produce personalized
+        financial, tax, and investment recommendations. By clicking 'Accept' you consent to the use of your data for these purposes.</p>
+
+        <p><strong>Storage & Security:</strong> Your data will be stored in secure, encrypted systems. FinAI will not sell your personal data.
+        Data may be used in aggregated and anonymized form to improve services.</p>
+
+        <p><strong>Legal:</strong> By clicking Accept you enter a legally binding agreement allowing FinAI to use your data as described. FinAI and its
+        affiliates are not responsible for outcomes from implementation of the advice; professional execution is required.</p>
+
+        <p><strong>Opt-out:</strong> If you do not accept, you will not be able to use this platform and will be redirected away from the service.</p>
+        </div>
     """, unsafe_allow_html=True)
-    agree = st.checkbox("I have read and I ACCEPT this Privacy & Data Agreement")
-    if agree:
+
+    accept = st.checkbox("I have read and ACCEPT this Privacy & Data Agreement")
+    if accept:
         st.session_state.privacy_accepted = True
+        # Immediately navigate to home/dashboard without requiring scroll
+        st.session_state.page = "home"
+        st.experimental_rerun()
     else:
-        st.warning("You must accept the privacy agreement to continue.")
         st.stop()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- AI routing + fallback logic ----------------
-def detect_user_type_free_text(text: str) -> str:
-    """Use OpenAI if available to classify as individual/household/business, else fallback rule-based."""
+# ---------------- AI / RULE-BASED CLASSIFICATION ----------------
+def detect_user_type(text: str) -> str:
+    text_l = (text or "").lower()
     api_key = st.secrets.get("OPENAI_API_KEY", "")
-    text_clean = (text or "").lower()
     if api_key:
-        openai.api_key = api_key
         try:
-            prompt = f"Classify the following financial query into one of: individual, household, business.\n\nQuery: \"{text}\"\n\nReturn only one word: individual, household, or business."
-            resp = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=6, temperature=0.0)
-            out = resp.choices[0].text.strip().lower()
+            openai.api_key = api_key
+            prompt = f"Classify the query into one of: individual, household, business. Query: {text}"
+            res = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=6, temperature=0)
+            out = res.choices[0].text.strip().lower()
             if out in ("individual","household","business"):
                 return out
         except Exception:
-            # fall through to rule-based
             pass
-
-    # Rule-based fallback
-    if any(k in text_clean for k in ["business", "company", "corporate", "revenue", "employees", "profit"]):
+    # fallback simple rules
+    if any(k in text_l for k in ["business","company","employees","revenue","profit","expenses"]):
         return "business"
-    if any(k in text_clean for k in ["household", "family", "kids", "children", "spouse", "partner", "house"]):
+    if any(k in text_l for k in ["household","family","kids","children","spouse","partner","home"]):
         return "household"
     return "individual"
 
-# ---------------- AI advice generator (OpenAI if available, else strong fallback) ----------------
-def generate_advice(user_type: str, inputs: dict) -> str:
-    """
-    Returns AI-style advice. If OpenAI API key exists, use model. Otherwise use a deterministic
-    fallback that still gives realistic suggestions (tax saving, investment, next steps).
-    """
+# ---------------- AI-STYLE ADVICE (OpenAI when available, fallback deterministic) ----------------
+def build_advice(user_type: str, inputs: dict) -> str:
     api_key = st.secrets.get("OPENAI_API_KEY", "")
-    # Build an input summary string
-    lines = [f"{k}: {v}" for k, v in inputs.items()]
-    summary = "\n".join(lines) if lines else "No inputs provided."
-
-    # If OpenAI available -> call it
+    summary = "\n".join([f"{k}: {v}" for k,v in inputs.items()])
+    context = MARKET_OVERVIEW  # embed snapshot context
     if api_key:
-        openai.api_key = api_key
         try:
+            openai.api_key = api_key
             prompt = f"""
-You are a professional, conservative financial advisor. The user type is: {user_type}.
-User inputs:
+You are a conservative, professional financial advisor. Use the MARKET CONTEXT provided below and the user's inputs to craft 4 concise,
+actionable bullets (no full step-by-step legal instructions) including approximate monthly or annual savings where reasonable.
+Also add a one-line CTA to contact the firm for implementation.
+
+MARKET CONTEXT:
+{context}
+
+USER INPUTS:
 {summary}
 
-Provide:
-1) A 4-bullet high-quality personalized summary of what they should consider (tax saving ideas, investment places, expense optimization).
-2) For each bullet include a short estimate of potential monthly savings or impact where reasonable (use conservative assumptions).
-3) Conclude with a call-to-action: ask user to contact the firm to implement.
-
-Do NOT provide step-by-step legal/filing instructions — encourage professional implementation.
-"""
-            resp = openai.Completion.create(engine="text-davinci-003", prompt=prompt, temperature=0.2, max_tokens=450)
-            advice_text = resp.choices[0].text.strip()
-            return advice_text
+Provide clear, practical recommendations tailored to the user's type ({user_type})."""
+            res = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=450, temperature=0.2)
+            return res.choices[0].text.strip()
         except Exception:
-            # fallback below
             pass
 
-    # Fallback deterministic advisor (rule-based)
-    # We'll generate realistic-sounding advice based on inputs.
-    adv = []
-    def fmt_amt(x):
+    # Fallback rule-based advice
+    def fmt(x):
         try:
             return f"R {float(x):,.0f}"
-        except Exception:
+        except:
             return str(x)
-
+    adv = []
     if user_type == "individual":
-        income = float(inputs.get("Income", 0) or 0)
-        deductions = float(inputs.get("Deductions", 0) or 0)
-        # basic estimates
-        est_taxable = max(income - deductions, 0)
-        adv.append(f"Review tax-advantaged savings: contributing to retirement and tax-free savings can reduce taxable income; potential yearly saving could be ~{fmt_amt(min(0.1*income, 0.15*est_taxable))}.")
-        adv.append("Automate investments into diversified low-cost funds (index trackers) to improve net returns and reduce fees.")
-        adv.append("Identify recurring subscriptions and non-essential expenses — trimming 5-10% may increase monthly savings meaningfully.")
-        adv.append("Contact us to review precise tax credits/exemptions for your profile and implement legally-compliant strategies.")
+        income = float(inputs.get("Income",0) or 0)
+        ded = float(inputs.get("Deductions",0) or 0)
+        adv.append(f"Prioritize tax-advantaged savings: Maximize retirement contributions and tax-free savings. Estimate: reducing taxable income by 5-10% may save you ~R {max(0,int(0.05*income))} annually.")
+        adv.append("Use diversified low-cost index funds for long-term growth; avoid concentrated bets in a few mega-cap names.")
+        adv.append("Review recurring costs — cutting 5% of non-essential spending increases monthly savings.")
+        adv.append("Contact us to model precise tax credits and implement a compliant tax strategy that preserves upside.")
     elif user_type == "household":
-        inc = float(inputs.get("Household Income", 0) or 0)
-        ded = float(inputs.get("Deductions", 0) or 0)
-        kids = int(inputs.get("Children", 0) or 0)
-        adv.append(f"Household budgeting: aggregate income {fmt_amt(inc)} — ensure emergency fund equals 3-6 months expenses. Consider directing idle cash into tax-efficient accounts.")
-        # child-related idea
-        if kids > 0:
-            adv.append(f"Explore child-related tax credits/deductions and education investment plans — these often yield both tax and long-term wealth benefits.")
+        inc = float(inputs.get("Household Income",0) or 0)
+        kids = int(inputs.get("Children",0) or 0)
+        adv.append(f"Keep an emergency fund of 3–6 months of household expenses; consider allocating idle cash to tax-efficient savings.")
+        if kids>0:
+            adv.append("Explore child/education tax benefits and savings accounts—these often yield both tax efficiency and long-term growth.")
         else:
-            adv.append("If no dependents, consider spouse/partner income-splitting strategies and maximizing retirement contributions.")
-        adv.append("Use itemized deductions where applicable; implementing business-structured investments where appropriate can change tax profile.")
-        adv.append("Contact us for a household-specific tax-savings audit — we can estimate exact annual savings after reviewing statements.")
+            adv.append("Consider spousal income-splitting and maximizing retirement account contributions to reduce household tax burden.")
+        adv.append("Diversify between equities and inflation-protected assets given current macro backdrop.")
+        adv.append("Contact us for a household tax-savings audit and a tailored investment plan.")
     else:  # business
-        rev = float(inputs.get("Revenue", 0) or 0)
-        exp = float(inputs.get("Expenses", 0) or 0)
-        employees = int(inputs.get("Employees", 0) or 0)
+        rev = float(inputs.get("Revenue",0) or 0)
+        exp = float(inputs.get("Expenses",0) or 0)
         profit = rev - exp
-        adv.append(f"Focus on deductible expenses and correct classification of costs — maximizing legitimate deductions could reduce taxable profit by a material amount (depends on business).")
-        adv.append("Consider tax-efficient remuneration strategies (salary vs dividends) and retirement savings plans for owners/employees to optimize tax treatment.")
-        adv.append(f"Implement expense controls and track deductible purchases using a dedicated business card to ensure clean accounting — this can increase deductible claims and lower audit risk.")
-        adv.append("Contact us for a full tax optimization plan; we will model scenarios and provide an estimate of potential annual tax savings.")
-    # join with line breaks
+        adv.append("Classify and capture all allowable deductible expenses; a clean bookkeeping process increases deductible claims and lowers taxable profit.")
+        adv.append("Consider tax-efficient owner remuneration (salary vs dividend) and retirement or pension schemes for owners/employees.")
+        adv.append("Track business expenses on a dedicated card and implement robust expense categories for proper tax treatment.")
+        adv.append("Contact our corporate team — we model scenarios and estimate potential annual tax savings after review.")
     return "\n\n".join(adv)
 
-# ---------------- PLOT HELPERS ----------------
-def show_financial_chart(user_type: str, inputs: dict):
-    # Use matplotlib; put inside white box for contrast
-    st.markdown("<div class='content-box'>", unsafe_allow_html=True)
-    st.subheader("Financial Summary Chart")
-    fig, ax = plt.subplots(figsize=(6,3.5))
-    labels = []
-    values = []
+# ---------------- CHARTS (bar + pie) ----------------
+def render_charts(user_type: str, inputs: dict):
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.subheader("Visual overview")
+    # create data depending on type
     if user_type == "individual":
         labels = ["Income","Deductions"]
-        values = [float(inputs.get("Income",0) or 0), float(inputs.get("Deductions",0) or 0)]
+        values = [float(inputs.get("Income",0)), float(inputs.get("Deductions",0))]
     elif user_type == "household":
         labels = ["Household Income","Deductions"]
-        values = [float(inputs.get("Household Income",0) or 0), float(inputs.get("Deductions",0) or 0)]
+        values = [float(inputs.get("Household Income",0)), float(inputs.get("Deductions",0))]
     else:
         labels = ["Revenue","Expenses"]
-        values = [float(inputs.get("Revenue",0) or 0), float(inputs.get("Expenses",0) or 0)]
-    # protect zeros for plotting
-    if all(v == 0 for v in values):
-        ax.text(0.5,0.5,"No numeric inputs yet", ha='center', va='center', fontsize=12)
+        values = [float(inputs.get("Revenue",0)), float(inputs.get("Expenses",0))]
+
+    # Bar chart
+    fig1, ax1 = plt.subplots(figsize=(6,3))
+    if sum(values) == 0:
+        ax1.text(0.5, 0.5, "No numeric inputs yet", ha="center", va="center")
     else:
-        bars = ax.bar(labels, values, color=['#2b8cbe','#f03b20'])
-        ax.set_ylabel("Amount (R)")
-        ax.set_xticks(range(len(labels)))
-        ax.set_xticklabels(labels, fontsize=10)
-        # annotate bars
+        bars = ax1.bar(labels, values, color=['#2b8cbe','#f03b20'])
+        ax1.set_ylabel("Amount (R)")
         for b in bars:
             h = b.get_height()
-            ax.annotate(f"R {h:,.0f}", xy=(b.get_x()+b.get_width()/2, h), xytext=(0,4), textcoords="offset points", ha='center', va='bottom', fontsize=9)
-        ax.set_ylim(0, max(values)*1.2 if max(values)>0 else 1)
-    st.pyplot(fig, clear_figure=True)
+            ax1.annotate(f"R {h:,.0f}", xy=(b.get_x()+b.get_width()/2, h), xytext=(0,3), textcoords="offset points", ha='center', va='bottom', fontsize=9)
+    st.pyplot(fig1, clear_figure=True)
+
+    # Pie chart when a breakdown is useful (business with expenses split, or individual with multiple components)
+    # For demo, show pie for revenue vs expenses or income vs deductions if both >0
+    if all(v>0 for v in values):
+        fig2, ax2 = plt.subplots(figsize=(4,4))
+        ax2.pie(values, labels=labels, autopct='%1.1f%%', startangle=90, colors=['#2b8cbe','#f03b20'])
+        ax2.axis('equal')
+        st.pyplot(fig2, clear_figure=True)
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- EXPORTS: PDF & EXCEL ----------------
-def export_pdf(inputs: dict, user_type: str, advice: str) -> bytes:
+# ---------------- EXPORTS ----------------
+def build_pdf(inputs: dict, user_type: str, advice: str) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, 750, f"FinAI Report - {user_type.capitalize()}")
+    c.drawString(40,750, f"FinAI Report — {user_type.capitalize()}")
     c.setFont("Helvetica", 10)
     y = 730
-    c.drawString(40, y, "Inputs:")
-    y -= 16
-    for k,v in inputs.items():
-        c.drawString(50, y, f"{k}: {v}")
-        y -= 14
-        if y < 60:
-            c.showPage()
-            y = 750
-    y -= 6
-    c.drawString(40, y, "AI Advice:")
-    y -= 16
-    wrapper = textwrap.wrap(advice, width=90)
-    for line in wrapper:
-        c.drawString(50, y, line)
+    c.drawString(40,y, "Market Context (snapshot):")
+    y -= 14
+    for line in textwrap.wrap(MARKET_OVERVIEW, width=90):
+        c.drawString(45,y, line)
         y -= 12
         if y < 60:
-            c.showPage()
-            y = 750
+            c.showPage(); y = 750
+    y -= 8
+    c.drawString(40,y, "Inputs:")
+    y -= 12
+    for k,v in inputs.items():
+        c.drawString(45,y, f"{k}: {v}")
+        y -= 12
+        if y < 60:
+            c.showPage(); y = 750
+    y -= 6
+    c.drawString(40,y, "AI Advice:")
+    y -= 14
+    for line in textwrap.wrap(advice, width=90):
+        c.drawString(45,y, line)
+        y -= 12
+        if y < 60:
+            c.showPage(); y = 750
     c.save()
-    pdf_bytes = buf.getvalue()
+    pdf = buf.getvalue()
     buf.close()
-    return pdf_bytes
+    return pdf
 
-def export_excel(inputs: dict, user_type: str, advice: str) -> bytes:
+def build_excel(inputs: dict, user_type: str, advice: str) -> bytes:
     out = io.BytesIO()
     wb = xlsxwriter.Workbook(out, {'in_memory': True})
     ws = wb.add_worksheet("Summary")
-    ws.write(0,0,"User Type")
-    ws.write(0,1,user_type)
-    row = 2
-    ws.write(1,0,"Input")
-    ws.write(1,1,"Value")
+    ws.write(0,0,"User Type"); ws.write(0,1, user_type)
+    ws.write(2,0,"Input"); ws.write(2,1,"Value")
+    r = 3
     for k,v in inputs.items():
-        ws.write(row,0,k)
-        ws.write(row,1, v)
-        row += 1
-    row += 1
-    ws.write(row,0,"Advice")
-    ws.write(row,1,advice)
+        ws.write(r,0,k); ws.write(r,1, v); r += 1
+    r += 1
+    ws.write(r,0,"AI Advice"); ws.write(r,1, advice)
     wb.close()
     return out.getvalue()
 
-# ---------------- MAIN PAGES ----------------
-
+# ---------------- PAGES ----------------
 def page_home():
-    st.markdown("<div class='content-box'>", unsafe_allow_html=True)
-    st.title("FinAI — Personalised Tax & Investment Advisor")
-    st.markdown("Describe your situation in plain English and FinAI will route you to targeted tools and tailored advice.")
-    # glowing input style via CSS class for the block
-    query = st.text_input("🔎 Ask FinAI anything...", value="", help="Type what you want help with: e.g. 'I run a small bakery. I pay R50k monthly in rent and have 3 employees' — FinAI will route you.", key="search")
-    submit_clicked = st.button("Submit", key="submit_search")
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    # Manual category buttons
-    col1, col2, col3 = st.columns([1,1,1])
-    with col1:
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
+    st.title("FinAI — Intelligent Tax & Investment Assistant")
+    st.markdown("<small class='small-muted'>Market context (snapshot):</small>")
+    st.info(MARKET_OVERVIEW)
+    st.markdown("---")
+    q = st.text_input("Describe your situation in plain English:", key="home_query", placeholder="e.g. 'I run a small bakery with R2M revenue and R1.4M expenses'  — or 'I am an individual with R400k annual salary' ")
+    submit = st.button("Detect & Go", key="home_submit")
+    st.markdown("Or choose your path:")
+    c1, c2, c3 = st.columns(3)
+    with c1:
         if st.button("Individual", key="home_ind"):
-            st.session_state.page = "dashboard"
             st.session_state.user_type = "individual"
-    with col2:
+            st.session_state.page = "dashboard"
+            st.experimental_rerun()
+    with c2:
         if st.button("Household", key="home_house"):
-            st.session_state.page = "dashboard"
             st.session_state.user_type = "household"
-    with col3:
-        if st.button("Business", key="home_bus"):
             st.session_state.page = "dashboard"
+            st.experimental_rerun()
+    with c3:
+        if st.button("Business", key="home_bus"):
             st.session_state.user_type = "business"
-
+            st.session_state.page = "dashboard"
+            st.experimental_rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # If user typed a query and clicked submit -> detect and go
-    if submit_clicked and query.strip():
-        detected = detect_user_type_free_text(query)
+    # if query submitted, detect and go
+    if submit:
+        detected = detect_user_type(q)
         st.session_state.user_type = detected
         st.session_state.page = "dashboard"
-        # note: Streamlit automatically reruns after interaction; just proceed
+        st.experimental_rerun()
 
 def page_dashboard():
-    ut = st.session_state.get("user_type", "individual") or "individual"
-    st.markdown("<div class='content-box'>", unsafe_allow_html=True)
+    ut = st.session_state.get("user_type","individual") or "individual"
+    st.markdown("<div class='panel'>", unsafe_allow_html=True)
     st.title(f"{ut.capitalize()} Dashboard")
-    st.markdown("<small class='tooltip'>Fields marked are monthly/annual amounts — where relevant specify whether annual or monthly in the label or notes.</small>", unsafe_allow_html=True)
-    st.markdown("---")
-    # gather inputs and persist them to session_state
+    st.markdown("<small class='small-muted'>All numeric fields accept typed values (no +/-). Specify if amounts are monthly or annual in labels/note.</small>")
+    # render input blocks, save into session_state
     if ut == "individual":
-        ins = st.session_state.individual_inputs
-        income = st.number_input("Annual Income (R)", value=float(ins.get("Income", 0)), format="%.2f", help="Total annual taxable income")
-        deductions = st.number_input("Annual Deductions (R)", value=float(ins.get("Deductions", 0)), format="%.2f", help="Total annual deductions you currently claim")
-        # save
+        d = st.session_state.individual_inputs
+        income = st.number_input("Annual Income (R)", value=float(d.get("Income",0.0)), format="%.2f", help="Total annual taxable income")
+        deductions = st.number_input("Annual Deductions (R)", value=float(d.get("Deductions",0.0)), format="%.2f", help="Total deductions")
         st.session_state.individual_inputs = {"Income": income, "Deductions": deductions}
-        current_inputs = st.session_state.individual_inputs
+        inputs = st.session_state.individual_inputs
     elif ut == "household":
-        ins = st.session_state.household_inputs
-        h_income = st.number_input("Household Annual Income (R)", value=float(ins.get("Household Income",0)), format="%.2f", help="Total household annual income")
-        children = st.number_input("Number of Children", value=int(ins.get("Children",0)), min_value=0, step=1, help="Number of dependents")
-        deductions = st.number_input("Total Household Deductions (R)", value=float(ins.get("Deductions",0)), format="%.2f", help="Total household deductions")
-        st.session_state.household_inputs = {"Household Income": h_income, "Children": children, "Deductions": deductions}
-        current_inputs = st.session_state.household_inputs
-    else:  # business
-        ins = st.session_state.business_inputs
-        revenue = st.number_input("Annual Revenue (R)", value=float(ins.get("Revenue",0)), format="%.2f", help="Total revenue for the business (annual)")
-        expenses = st.number_input("Annual Expenses (R)", value=float(ins.get("Expenses",0)), format="%.2f", help="Total business expenses (annual)")
-        employees = st.number_input("Number of Employees", value=int(ins.get("Employees",0)), min_value=0, step=1, help="Number of employees")
-        st.session_state.business_inputs = {"Revenue": revenue, "Expenses": expenses, "Employees": employees}
-        current_inputs = st.session_state.business_inputs
+        d = st.session_state.household_inputs
+        hinc = st.number_input("Household Annual Income (R)", value=float(d.get("Household Income",0.0)), format="%.2f")
+        kids = st.number_input("Number of Children", value=int(d.get("Children",0)), min_value=0, step=1)
+        hd = st.number_input("Total Household Deductions (R)", value=float(d.get("Deductions",0.0)), format="%.2f")
+        st.session_state.household_inputs = {"Household Income": hinc, "Children": kids, "Deductions": hd}
+        inputs = st.session_state.household_inputs
+    else:
+        d = st.session_state.business_inputs
+        rev = st.number_input("Annual Revenue (R)", value=float(d.get("Revenue",0.0)), format="%.2f")
+        exp = st.number_input("Annual Expenses (R)", value=float(d.get("Expenses",0.0)), format="%.2f")
+        emp = st.number_input("Number of Employees", value=int(d.get("Employees",0)), min_value=0, step=1)
+        st.session_state.business_inputs = {"Revenue": rev, "Expenses": exp, "Employees": emp}
+        inputs = st.session_state.business_inputs
 
     st.markdown("---")
-    col_a, col_b = st.columns([2,1])
-    with col_a:
-        # Advice button
+    colL, colR = st.columns([2,1])
+    with colL:
         if st.button("Get AI-style Personalized Advice"):
-            st.session_state.advice_text = generate_advice(ut, current_inputs)
-            # show advice
-            st.markdown("<div class='white-box'>", unsafe_allow_html=True)
-            st.subheader("Personalized Advice")
-            st.write(st.session_state.advice_text)
+            advice = build_advice(ut, inputs)
+            st.session_state.advice_text = advice
+            st.markdown("<div class='panel'>", unsafe_allow_html=True)
+            st.subheader("Personalized Advice (high-level)")
+            st.write(advice)
             st.markdown("</div>", unsafe_allow_html=True)
-            # show chart
-            show_financial_chart(ut, current_inputs)
+            # charts
+            render_charts(ut, inputs)
         else:
-            # if previously generated advice exists, show partially
+            # show cached advice if exists
             if st.session_state.advice_text:
-                st.markdown("<div class='white-box'>", unsafe_allow_html=True)
+                st.markdown("<div class='panel'>", unsafe_allow_html=True)
                 st.subheader("Most Recent Advice")
                 st.write(st.session_state.advice_text)
                 st.markdown("</div>", unsafe_allow_html=True)
-                show_financial_chart(ut, current_inputs)
-    with col_b:
+                render_charts(ut, inputs)
+            else:
+                st.info("Press 'Get AI-style Personalized Advice' to generate recommendations based on current market snapshot.")
+    with colR:
         st.subheader("Quick actions")
-        # Export (works even if empty advice)
-        advice_for_export = st.session_state.advice_text or "No advice generated yet. Press 'Get AI-style Personalized Advice' to create."
-        pdf_bytes = export_pdf(current_inputs, ut, advice_for_export)
-        excel_bytes = export_excel(current_inputs, ut, advice_for_export)
-        st.download_button("Download PDF Report", data=pdf_bytes, file_name="finai_report.pdf")
-        st.download_button("Download Excel Report", data=excel_bytes, file_name="finai_report.xlsx")
+        advice_for_export = st.session_state.advice_text or "No advice generated yet."
+        pdf_b = build_pdf(inputs, ut, advice_for_export)
+        xlsx_b = build_excel(inputs, ut, advice_for_export)
+        st.download_button("Download PDF Report", data=pdf_b, file_name="finai_report.pdf")
+        st.download_button("Download Excel Report", data=xlsx_b, file_name="finai_report.xlsx")
         st.markdown("---")
-        st.markdown("**Need hands-on help?**")
-        st.markdown("Contact our team to turn recommendations into actionable steps. We assist with tax filing, investment setup, and implementation.")
-
+        st.markdown("**Want implementation help?**")
+        st.markdown("Contact our team for a tailored, executed plan — we help implement tax strategies, investment allocations, and accounting best-practices.")
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- APP START ----------------
+# ---------------- APP MAIN ----------------
 def main():
-    # ensure privacy accepted
-    if not st.session_state.get("privacy_accepted", False):
-        show_privacy_agreement()
+    # privacy gate — show first and immediately navigate on accept
+    if not st.session_state.privacy_accepted:
+        show_privacy_and_block()
 
-    # top navbar (simple)
-    pages = {"home": "Home", "dashboard": "Dashboard"}
-    st.markdown("<div style='margin-bottom:12px'></div>", unsafe_allow_html=True)
-    # show simple nav links
-    nav_cols = st.columns([1,1,1,2])
-    if nav_cols[0].button("Home"):
+    # top nav
+    nav1, nav2, nav3, nav4 = st.columns([1,1,1,2])
+    if nav1.button("Home"):
         st.session_state.page = "home"
-    if nav_cols[1].button("Individual"):
+    if nav2.button("Dashboard (Individual)"):
         st.session_state.page = "dashboard"; st.session_state.user_type = "individual"
-    if nav_cols[2].button("Household"):
+    if nav3.button("Dashboard (Household)"):
         st.session_state.page = "dashboard"; st.session_state.user_type = "household"
-    if nav_cols[3].button("Business"):
+    if nav4.button("Dashboard (Business)"):
         st.session_state.page = "dashboard"; st.session_state.user_type = "business"
 
-    # route pages
     if st.session_state.page == "home":
         page_home()
     elif st.session_state.page == "dashboard":
-        # ensure user_type exists
-        if "user_type" not in st.session_state or not st.session_state.user_type:
-            st.session_state.user_type = "individual"
         page_dashboard()
     else:
         page_home()
