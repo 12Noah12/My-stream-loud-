@@ -14,46 +14,6 @@ if "page" not in st.session_state:
 if "ai_query" not in st.session_state:
     st.session_state.ai_query = ""
 
-# ---------------- USER TYPE SELECTION ----------------
-if st.session_state.user_type is None:
-    st.markdown("<h1 style='text-align:center;'>Welcome to FinAI! 💡</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='text-align:center;'>Please select your user type to see relevant tools:</p>", unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-
-    with col1:
-        if st.button("👔 Business"):
-            st.session_state.user_type = "business"
-            st.session_state.page = "home"
-            st.experimental_rerun()
-
-    with col2:
-        if st.button("🏠 Family"):
-            st.session_state.user_type = "family"
-            st.session_state.page = "home"
-            st.experimental_rerun()
-
-    st.stop()
-
-# ---------------- PAGES ----------------
-if st.session_state.user_type == "business":
-    PAGES = {
-        "home": "Home",
-        "business_tax": "Business Tax Optimization",
-        "investments": "Investments",
-        "sme": "SME Dashboard",
-        "estate": "Estate Planning",
-        "premium": "Premium Modules"
-    }
-elif st.session_state.user_type == "family":
-    PAGES = {
-        "home": "Home",
-        "family_tax": "Family Tax Optimization",
-        "investments": "Investments",
-        "estate": "Estate Planning",
-        "premium": "Premium Modules"
-    }
-
 # ---------------- CSS ----------------
 st.markdown("""
 <style>
@@ -77,17 +37,48 @@ transition: box-shadow 0.3s, transform 0.3s; }
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- NAVBAR ----------------
-nav_buttons_html = "".join([f"""<span class="nav-button">
-<button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
-</span>""" for k,v in PAGES.items()])
-st.markdown(f"""
-<div class="navbar">
-    <div class="logo">💡 FinAI</div>
-    <div class="nav-links">{nav_buttons_html}</div>
-    <div class="dots">⋮</div>
-</div>
-""", unsafe_allow_html=True)
+# ---------------- SESSION RESET ----------------
+def reset_app():
+    st.session_state.user_type = None
+    st.session_state.page = "home"
+    st.session_state.ai_query = ""
+    st.experimental_rerun()
+
+# ---------------- USER TYPE SELECTION ----------------
+def select_user_type():
+    st.markdown("<h2 style='text-align:center;'>Please select your user type:</h2>", unsafe_allow_html=True)
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("👔 Business"):
+            st.session_state.user_type = "business"
+            st.session_state.page = "home"
+            st.experimental_rerun()
+    with col2:
+        if st.button("🏠 Family"):
+            st.session_state.user_type = "family"
+            st.session_state.page = "home"
+            st.experimental_rerun()
+    st.stop()
+
+# ---------------- PAGE DEFINITIONS ----------------
+def get_pages():
+    if st.session_state.user_type == "business":
+        return {
+            "home": "Home",
+            "business_tax": "Business Tax Optimization",
+            "investments": "Investments",
+            "sme": "SME Dashboard",
+            "estate": "Estate Planning",
+            "premium": "Premium Modules"
+        }
+    elif st.session_state.user_type == "family":
+        return {
+            "home": "Home",
+            "family_tax": "Family Tax Optimization",
+            "investments": "Investments",
+            "estate": "Estate Planning",
+            "premium": "Premium Modules"
+        }
 
 # ---------------- BACKGROUND ----------------
 BG_STYLES = {
@@ -99,63 +90,71 @@ BG_STYLES = {
     "estate": "linear-gradient(135deg, #8e44ad 0%, #6c3483 100%)",
     "premium": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
 }
-st.markdown(f"<style>body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}</style>", unsafe_allow_html=True)
 
-# ---------------- PAGE TITLE ----------------
-SECTION_TEXT = {
-    "home": "👋 Welcome to FinAI! Ask me anything below.",
-    "business_tax": "💼 Optimize your business taxes efficiently.",
-    "family_tax": "🏠 Optimize your family taxes with AI guidance.",
-    "investments": "📈 Grow your wealth with AI-guided investments.",
-    "sme": "🏢 Manage your business efficiently with our SME tools.",
-    "estate": "⚖️ Plan your estate and inheritance smartly.",
-    "premium": "🌟 Unlock powerful premium features here."
-}
-st.title(PAGES[st.session_state.page])
-st.write(SECTION_TEXT[st.session_state.page])
+# ---------------- NAVBAR ----------------
+def show_navbar(pages):
+    nav_buttons_html = "".join([f"""<span class="nav-button">
+<button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
+</span>""" for k,v in pages.items()])
+    st.markdown(f"""
+    <div class="navbar">
+        <div class="logo">💡 FinAI</div>
+        <div class="nav-links">{nav_buttons_html}</div>
+        <div class="dots" onclick="window.parent.postMessage({{reset:true}}, '*')">⋮</div>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---------------- HOME PAGE ----------------
-if st.session_state.page == "home":
-    # AI search bar container
+# ---------------- AI SEARCH ----------------
+def ai_search():
+    st.markdown('<div class="ai-search-container">', unsafe_allow_html=True)
     with st.form("ai_form"):
-        query = st.text_input("🔍 Ask FinAI anything...", st.session_state.ai_query)
-        submitted = st.form_submit_button("Submit")
+        query = st.text_input("", st.session_state.ai_query, placeholder="🔍 Ask FinAI anything...", key="ai_input")
+        submitted = st.form_submit_button("Go")
         if submitted and query:
             st.session_state.ai_query = query.lower()
-            # Simple routing based on keywords
-            if any(x in st.session_state.ai_query for x in ["business tax", "tax optimization"]):
-                st.session_state.page = "business_tax"
-            elif any(x in st.session_state.ai_query for x in ["family tax", "tax deduction"]):
-                st.session_state.page = "family_tax"
-            elif any(x in st.session_state.ai_query for x in ["investment", "invest"]):
-                st.session_state.page = "investments"
-            elif any(x in st.session_state.ai_query for x in ["sme", "small business"]):
-                st.session_state.page = "sme"
-            elif any(x in st.session_state.ai_query for x in ["estate", "inheritance"]):
-                st.session_state.page = "estate"
-            elif any(x in st.session_state.ai_query for x in ["premium"]):
-                st.session_state.page = "premium"
-            else:
-                st.warning("No matching module found. Try keywords like 'tax', 'investment', 'SME', 'estate'.")
+            pages = get_pages()
+            # Simple keyword routing
+            keyword_map = {
+                "business_tax": ["business tax", "tax optimization", "tax"],
+                "family_tax": ["family tax", "deduction", "family"],
+                "investments": ["investment", "invest", "portfolio"],
+                "sme": ["sme", "small business", "enterprise"],
+                "estate": ["estate", "inheritance", "will"],
+                "premium": ["premium", "advanced", "analytics"]
+            }
+            redirected = False
+            for page_key, keywords in keyword_map.items():
+                if any(k in st.session_state.ai_query for k in keywords) and page_key in pages:
+                    st.session_state.page = page_key
+                    redirected = True
+                    break
+            if not redirected:
+                st.warning("No matching module found. Try keywords like 'tax', 'investment', 'SME', 'estate', 'premium'.")
             st.experimental_rerun()
+    st.markdown('</div>', unsafe_allow_html=True)
+
+# ---------------- HOME PAGE ----------------
+def show_home():
+    st.markdown("### Welcome to FinAI! 💡")
+    st.write("Type in the AI search bar above or select your user type below.")
 
 # ---------------- BUSINESS TAX ----------------
-if st.session_state.page == "business_tax":
-    st.subheader("Business Tax Optimization Calculator")
-    revenue = st.number_input("Annual Revenue (R)", min_value=0.0, value=100000.0, help="Total revenue for the year")
-    expenses = st.number_input("Total Expenses (R)", min_value=0.0, value=50000.0, help="Deductible business expenses")
+def show_business_tax():
+    st.subheader("Business Tax Optimization")
+    revenue = st.number_input("Annual Revenue (R)", 0.0, 100000.0, help="Total revenue for the year")
+    expenses = st.number_input("Total Expenses (R)", 0.0, 50000.0, help="Deductible business expenses")
     profit = revenue - expenses
-    st.write(f"**Profit:** R{profit:,.2f}")
+    st.write(f"Profit: R{profit:,.2f}")
     tax_rate = 0.28 if profit > 1000000 else 0.15
     tax_payable = profit * tax_rate
-    st.write(f"**Estimated Tax Payable:** R{tax_payable:,.2f} at {tax_rate*100}% rate")
+    st.write(f"Estimated Tax Payable: R{tax_payable:,.2f} at {tax_rate*100}% rate")
 
 # ---------------- FAMILY TAX ----------------
-if st.session_state.page == "family_tax":
-    st.subheader("Family Tax Optimization Calculator")
-    salary = st.number_input("Annual Salary (R)", min_value=0.0, value=350000.0)
-    other_income = st.number_input("Other Income (R)", min_value=0.0, value=0.0)
-    deductions = st.number_input("Deductions (R)", min_value=0.0, value=15000.0)
+def show_family_tax():
+    st.subheader("Family Tax Optimization")
+    salary = st.number_input("Annual Salary (R)", 0.0, 350000.0)
+    other_income = st.number_input("Other Income (R)", 0.0, 0.0)
+    deductions = st.number_input("Deductions (R)", 0.0, 15000.0)
     taxable_income = max(0, salary + other_income - deductions)
     brackets = [(0, 237100, 0.18, 0),
                 (237101, 370500, 0.26, 42678),
@@ -169,15 +168,24 @@ if st.session_state.page == "family_tax":
         if low <= taxable_income <= high:
             tax_owed = base + (taxable_income - low) * rate
             break
-    st.write(f"**Taxable Income:** R{taxable_income:,.2f}")
-    st.write(f"**Estimated Tax Owed:** R{tax_owed:,.2f}")
+    st.write(f"Taxable Income: R{taxable_income:,.2f}")
+    st.write(f"Estimated Tax Owed: R{tax_owed:,.2f}")
+
+# ---------------- SME DASHBOARD ----------------
+def show_sme():
+    st.subheader("SME Dashboard")
+    employees = st.number_input("Number of Employees", 0, 1000, 10)
+    avg_salary = st.number_input("Average Monthly Salary (R)", 0.0, 20000.0)
+    monthly_expense = employees * avg_salary
+    st.write(f"Total Monthly Payroll: R{monthly_expense:,.2f}")
+    st.write(f"Annual Payroll: R{monthly_expense*12:,.2f}")
 
 # ---------------- INVESTMENTS ----------------
-if st.session_state.page == "investments":
+def show_investments():
     st.subheader("Investment Growth Simulator")
-    principal = st.number_input("Initial Investment (R)", min_value=0.0, value=100000.0)
-    monthly = st.number_input("Monthly Contribution (R)", min_value=0.0, value=5000.0)
-    years = st.number_input("Investment Period (Years)", min_value=1, value=10)
+    principal = st.number_input("Initial Investment (R)", 0.0, 100000.0)
+    monthly = st.number_input("Monthly Contribution (R)", 0.0, 5000.0)
+    years = st.number_input("Years", 1, 50, 10)
     rate = st.slider("Expected Annual Return (%)", 0.0, 20.0, 7.0)/100
     months = years*12
     balances = []
@@ -190,24 +198,36 @@ if st.session_state.page == "investments":
     fig = px.line(df_inv, x="Month", y="Balance", title="Investment Growth Over Time")
     st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- SME DASHBOARD ----------------
-if st.session_state.user_type == "business" and st.session_state.page == "sme":
-    st.subheader("SME Dashboard")
-    employees = st.number_input("Number of Employees", min_value=0, value=10)
-    avg_salary = st.number_input("Average Monthly Salary (R)", min_value=0.0, value=20000.0)
-    monthly_expense = employees * avg_salary
-    st.write(f"**Total Monthly Payroll:** R{monthly_expense:,.2f}")
-    st.write(f"**Annual Payroll:** R{monthly_expense*12:,.2f}")
-
 # ---------------- ESTATE PLANNING ----------------
-if st.session_state.page == "estate":
-    st.subheader("Estate Planning Calculator")
-    estate_value = st.number_input("Total Estate Value (R)", min_value=0.0, value=2000000.0)
-    heirs = st.number_input("Number of Heirs", min_value=1, value=2)
+def show_estate():
+    st.subheader("Estate Planning")
+    estate_value = st.number_input("Total Estate Value (R)", 0.0, 2000000.0)
+    heirs = st.number_input("Number of Heirs", 1, 50, 2)
     per_heir = estate_value / heirs
-    st.write(f"**Estimated Amount per Heir:** R{per_heir:,.2f}")
+    st.write(f"Estimated Amount per Heir: R{per_heir:,.2f}")
 
-# ---------------- PREMIUM MODULES ----------------
-if st.session_state.page == "premium":
+# ---------------- PREMIUM ----------------
+def show_premium():
     st.subheader("Premium Modules")
-    st.write("Advanced analytics, charts, AI recommendations coming here.")
+    st.write("Advanced analytics, AI-driven recommendations, charts, and simulations.")
+
+# ---------------- MAIN ----------------
+pages = get_pages()
+show_navbar(pages)
+ai_search()
+if st.session_state.page == "home" and st.session_state.user_type is None:
+    select_user_type()
+elif st.session_state.page == "home":
+    show_home()
+elif st.session_state.page == "business_tax":
+    show_business_tax()
+elif st.session_state.page == "family_tax":
+    show_family_tax()
+elif st.session_state.page == "investments":
+    show_investments()
+elif st.session_state.page == "sme":
+    show_sme()
+elif st.session_state.page == "estate":
+    show_estate()
+elif st.session_state.page == "premium":
+    show_premium()
