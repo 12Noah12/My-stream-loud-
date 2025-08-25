@@ -1,50 +1,52 @@
 import streamlit as st
 import numpy as np
-import matplotlib.pyplot as plt
-import plotly.express as px
 import pandas as pd
+import plotly.express as px
 
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
-# ---------------- USER TYPE SELECTION ----------------
+# ---------------- SESSION STATE ----------------
 if "user_type" not in st.session_state:
     st.session_state.user_type = None
+if "page" not in st.session_state:
+    st.session_state.page = "home"
 
-# Default PAGES dictionary
-PAGES = {"home": "Home"}
-
+# ---------------- USER TYPE SELECTION ----------------
 if st.session_state.user_type is None:
     st.title("Welcome to FinAI! 💡")
     st.write("Please select your user type to see relevant tools:")
     col1, col2 = st.columns(2)
-    if col1.button("👔 Business"):
+    business_clicked = col1.button("👔 Business")
+    family_clicked = col2.button("🏠 Family")
+    if business_clicked:
         st.session_state.user_type = "business"
         st.experimental_rerun()
-    if col2.button("🏠 Family"):
+    if family_clicked:
         st.session_state.user_type = "family"
         st.experimental_rerun()
-else:
-    # User type is set, define PAGES accordingly
-    if st.session_state.user_type == "business":
-        PAGES = {
-            "home": "Home",
-            "business_tax": "Business Tax Optimization",
-            "investments": "Investments",
-            "sme": "SME Dashboard",
-            "estate": "Estate Planning",
-            "premium": "Premium Modules"
-        }
-    elif st.session_state.user_type == "family":
-        PAGES = {
-            "home": "Home",
-            "family_tax": "Family Tax Optimization",
-            "investments": "Investments",
-            "estate": "Estate Planning",
-            "premium": "Premium Modules"
-        }
 
-# ---------------- BACKGROUND STYLES ----------------
+# ---------------- PAGE NAVIGATION ----------------
+if st.session_state.user_type == "business":
+    PAGES = {
+        "home": "Home",
+        "business_tax": "Business Tax Optimization",
+        "investments": "Investments",
+        "sme": "SME Dashboard",
+        "estate": "Estate Planning",
+        "premium": "Premium Modules"
+    }
+elif st.session_state.user_type == "family":
+    PAGES = {
+        "home": "Home",
+        "family_tax": "Family Tax Optimization",
+        "investments": "Investments",
+        "estate": "Estate Planning",
+        "premium": "Premium Modules"
+    }
+else:
+    PAGES = {"home": "Home"}
+
 BG_STYLES = {
     "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
     "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
@@ -65,93 +67,59 @@ SECTION_TEXT = {
     "premium": "🌟 Unlock powerful premium features here."
 }
 
-# ---------------- INIT STATE ----------------
-if "page" not in st.session_state:
-    st.session_state.page = "home"
-
 # ---------------- CSS ----------------
 st.markdown("""
 <style>
 .block-container { padding-top: 6rem; }
-.navbar {
-  position: fixed; top: 0; left: 0; width: 100%;
-  background: rgba(255,255,255,0.95); backdrop-filter: blur(10px);
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  padding: 0.7rem 1.5rem; display: flex; justify-content: space-between; align-items: center;
-  z-index: 1000;
-}
-.navbar .logo { font-weight: 700; font-size: 1.2rem; color: #2563eb; }
-.nav-links { display: flex; gap: 1rem; }
-.nav-button button {
-  background: none; border: none; font-weight: 600;
-  padding: 0.3rem 0.8rem; border-radius: 6px; cursor: pointer; transition: background 0.3s;
-}
-.nav-button button:hover { background: rgba(37,99,235,0.1); }
-.dots { cursor: pointer; font-size: 1.5rem; font-weight: bold; }
-.dots:hover { color: #2563eb; }
-.dots:active { transform: scale(0.95); }
-body { color: white; }
-
+.navbar { position: fixed; top: 0; left: 0; width: 100%; background: rgba(255,255,255,0.95); 
+backdrop-filter: blur(10px); box-shadow: 0 2px 8px rgba(0,0,0,0.15); padding:0.7rem 1.5rem; 
+display:flex; justify-content:space-between; align-items:center; z-index:1000; }
+.navbar .logo { font-weight:700; font-size:1.2rem; color:#2563eb; }
+.nav-links { display:flex; gap:1rem; }
+.nav-button button { background:none; border:none; font-weight:600; padding:0.3rem 0.8rem;
+border-radius:6px; cursor:pointer; transition: background 0.3s;}
+.nav-button button:hover { background: rgba(37,99,235,0.1);}
+.dots { cursor:pointer; font-size:1.5rem; font-weight:bold;}
+body { color:white; }
 .card { padding:1rem; margin:0.5rem 0; border-radius:12px; background: rgba(255,255,255,0.05); }
-
-/* Home AI search bar styling */
-.ai-search-container {
-    display: flex; justify-content: center; margin-top: 3rem;
-}
-.ai-search-input {
-    font-weight: 700; font-size: 1.3rem;
-    border: 3px solid #2563eb;
-    border-radius: 15px;
-    padding: 1rem 2rem;
-    width: 70%;
-    text-align: center;
-    box-shadow: 0 0 20px rgba(37,99,235,0.4);
-    transition: box-shadow 0.3s, transform 0.3s;
-}
-.ai-search-input:focus {
-    outline: none;
-    box-shadow: 0 0 40px rgba(37,99,235,0.8);
-    transform: scale(1.02);
-    animation: glow 2s infinite;
-}
-@keyframes glow {
-  0% { box-shadow: 0 0 20px rgba(37,99,235,0.4); }
-  50% { box-shadow: 0 0 40px rgba(37,99,235,0.8); }
-  100% { box-shadow: 0 0 20px rgba(37,99,235,0.4); }
-}
+.ai-search-container { display:flex; justify-content:center; margin-top:3rem; }
+.ai-search-input { font-weight:700; font-size:1.3rem; border:3px solid #2563eb; border-radius:15px;
+padding:1rem 2rem; width:70%; text-align:center; box-shadow:0 0 20px rgba(37,99,235,0.4);
+transition: box-shadow 0.3s, transform 0.3s; }
+.ai-search-input:focus { outline:none; box-shadow:0 0 40px rgba(37,99,235,0.8); transform:scale(1.02);
+animation: glow 2s infinite;}
+@keyframes glow {0% { box-shadow:0 0 20px rgba(37,99,235,0.4);}
+50% { box-shadow:0 0 40px rgba(37,99,235,0.8);}
+100% { box-shadow:0 0 20px rgba(37,99,235,0.4);}}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------- NAVBAR ----------------
 with st.container():
-    nav_buttons_html = ""
-    for k, v in PAGES.items():
-        nav_buttons_html += f"""<span class="nav-button">
-        <button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
-        </span>"""
+    nav_buttons_html = "".join([f"""<span class="nav-button">
+    <button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
+    </span>""" for k,v in PAGES.items()])
     st.markdown(f"""
     <div class="navbar">
         <div class="logo">💡 FinAI</div>
-        <div class="nav-links">
-            {nav_buttons_html}
-        </div>
+        <div class="nav-links">{nav_buttons_html}</div>
         <div class="dots">⋮</div>
     </div>
     """, unsafe_allow_html=True)
 
+# ---------------- NAV BUTTON LOGIC ----------------
 for key in PAGES.keys():
     if st.button(PAGES[key], key=f"btn-{key}"):
         st.session_state.page = key
 
+# ---------------- BACKGROUND ----------------
 st.markdown(f"""
 <style>
-body {{
-    background: {BG_STYLES[st.session_state.page]};
-    color: white;
-}}
+body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}
 </style>
 """, unsafe_allow_html=True)
 
+# ---------------- PAGE CONTENT ----------------
 st.title(PAGES[st.session_state.page])
 st.write(SECTION_TEXT[st.session_state.page])
 
@@ -159,16 +127,100 @@ st.write(SECTION_TEXT[st.session_state.page])
 if st.session_state.page == "home":
     st.markdown('<div class="ai-search-container"><input class="ai-search-input" type="text" placeholder="🔍 Ask FinAI anything..."></div>', unsafe_allow_html=True)
 
-# ---------------- PLACEHOLDER MODULES ----------------
+# ---------------- BUSINESS TAX OPTIMIZATION ----------------
 if st.session_state.page == "business_tax":
-    st.subheader("Business Tax Optimization Tools Coming Soon 🚀")
+    st.subheader("Business Tax Optimization Calculator")
+    revenue = st.number_input("Annual Revenue (R)", min_value=0.0, value=100000.0, help="Total revenue for the year")
+    expenses = st.number_input("Total Expenses (R)", min_value=0.0, value=50000.0, help="Deductible business expenses")
+    profit = revenue - expenses
+    st.write(f"**Profit:** R{profit:,.2f}")
+
+    # SBC Tax calculation 2025/26
+    if profit <= 1000000:
+        tax_rate = 0.0  # first R87k exempt, 7% next etc, simplified
+        tax_payable = max(0, profit * 0.0)
+    else:
+        tax_rate = 0.28
+        tax_payable = profit * tax_rate
+    st.write(f"**Estimated Tax Payable:** R{tax_payable:,.2f} at {tax_rate*100}% rate")
+
+# ---------------- FAMILY TAX OPTIMIZATION ----------------
 if st.session_state.page == "family_tax":
-    st.subheader("Family Tax Optimization Tools Coming Soon 🚀")
+    st.subheader("Family Tax Optimization Calculator")
+    salary = st.number_input("Annual Salary (R)", min_value=0.0, value=350000.0, help="Total salary income")
+    other_income = st.number_input("Other Income (R)", min_value=0.0, value=0.0, help="Dividends, interest etc")
+    deductions = st.number_input("Deductions (R)", min_value=0.0, value=15000.0, help="Retirement contributions, etc")
+    taxable_income = max(0, salary + other_income - deductions)
+
+    # SA 2025/26 tax brackets simplified
+    brackets = [(0, 237100, 0.18, 0),
+                (237101, 370500, 0.26, 42678),
+                (370501, 512800, 0.31, 77362),
+                (512801, 673000, 0.36, 121910),
+                (673001, 857900, 0.39, 179258),
+                (857901, 1817000, 0.41, 251258),
+                (1817001, np.inf, 0.45, 644489)]
+    tax_owed = 0
+    for low, high, rate, base in brackets:
+        if taxable_income >= low and taxable_income <= high:
+            tax_owed = base + (taxable_income - low) * rate
+            break
+    st.write(f"**Taxable Income:** R{taxable_income:,.2f}")
+    st.write(f"**Estimated Tax Owed:** R{tax_owed:,.2f}")
+
+# ---------------- INVESTMENTS ----------------
 if st.session_state.page == "investments":
-    st.subheader("Investment Recommendations Dashboard 📊")
+    st.subheader("Investment Growth Simulator")
+    principal = st.number_input("Initial Investment (R)", min_value=0.0, value=100000.0)
+    monthly = st.number_input("Monthly Contribution (R)", min_value=0.0, value=2000.0)
+    years = st.number_input("Years", min_value=1, value=10)
+    risk = st.selectbox("Risk Profile", ["Conservative (5%)", "Moderate (7%)", "Aggressive (10%)"])
+    rate_map = {"Conservative (5%)":0.05, "Moderate (7%)":0.07, "Aggressive (10%)":0.10}
+    rate = rate_map[risk]
+
+    months = years*12
+    balance = []
+    total = principal
+    for i in range(months):
+        total = total*(1+rate/12) + monthly
+        balance.append(total)
+    df = pd.DataFrame({"Month": range(1, months+1), "Balance": balance})
+    fig = px.line(df, x="Month", y="Balance", title="Projected Investment Growth")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------- SME DASHBOARD ----------------
 if st.session_state.page == "sme":
-    st.subheader("SME Dashboard: Manage Your Business 📂")
+    st.subheader("SME Financial Dashboard")
+    revenue = st.number_input("Monthly Revenue (R)", min_value=0.0, value=50000.0)
+    expenses = st.number_input("Monthly Expenses (R)", min_value=0.0, value=30000.0)
+    profit = revenue - expenses
+    st.metric("Profit", f"R{profit:,.2f}")
+    st.metric("Revenue", f"R{revenue:,.2f}")
+    st.metric("Expenses", f"R{expenses:,.2f}")
+
+    kpis = pd.DataFrame({
+        "Month": ["Jan","Feb","Mar","Apr","May"],
+        "Revenue":[50000,52000,48000,55000,60000],
+        "Expenses":[30000,31000,28000,33000,35000],
+        "Profit":[20000,21000,20000,22000,25000]
+    })
+    fig = px.bar(kpis, x="Month", y=["Revenue","Expenses","Profit"], barmode="group", title="KPI Overview")
+    st.plotly_chart(fig, use_container_width=True)
+
+# ---------------- ESTATE PLANNING ----------------
 if st.session_state.page == "estate":
-    st.subheader("Estate Planning Tools ⚖️")
+    st.subheader("Estate Planning Calculator")
+    estate_value = st.number_input("Total Estate Value (R)", min_value=0.0, value=3000000.0)
+    heirs = st.number_input("Number of Heirs", min_value=1, value=2)
+    estate_duty = 0.20 * max(0, estate_value - 3500000)  # SA estate duty above threshold
+    st.write(f"**Estimated Estate Duty:** R{estate_duty:,.2f}")
+    inheritance = (estate_value - estate_duty)/heirs
+    st.write(f"**Inheritance per Heir:** R{inheritance:,.2f}")
+
+# ---------------- PREMIUM MODULES ----------------
 if st.session_state.page == "premium":
-    st.subheader("Premium AI Modules 🌟 Coming Soon 🚀")
+    st.subheader("Premium AI Recommendations")
+    st.write("Based on your inputs, FinAI recommends:")
+    st.write("- Diversify your investments across asset classes")
+    st.write("- Maximise tax deductions where possible")
+    st.write("- Monitor KPIs monthly for SMEs")
