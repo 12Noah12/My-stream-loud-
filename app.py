@@ -11,6 +11,8 @@ if "user_type" not in st.session_state:
     st.session_state.user_type = None
 if "page" not in st.session_state:
     st.session_state.page = "home"
+if "ai_query" not in st.session_state:
+    st.session_state.ai_query = ""
 
 # ---------------- USER TYPE SELECTION ----------------
 if st.session_state.user_type is None:
@@ -20,10 +22,12 @@ if st.session_state.user_type is None:
     
     if col1.button("👔 Business"):
         st.session_state.user_type = "business"
+        st.session_state.page = "home"
         st.experimental_rerun()
     
     if col2.button("🏠 Family"):
         st.session_state.user_type = "family"
+        st.session_state.page = "home"
         st.experimental_rerun()
 
 # ---------------- PAGES DICTIONARY ----------------
@@ -45,8 +49,9 @@ elif st.session_state.user_type == "family":
         "premium": "Premium Modules"
     }
 else:
-    PAGES = {"home": "Home"}  # default placeholder
+    st.stop()  # Prevent running further if user_type not selected
 
+# ---------------- BACKGROUND STYLES ----------------
 BG_STYLES = {
     "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
     "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
@@ -81,31 +86,26 @@ border-radius:6px; cursor:pointer; transition: background 0.3s;}
 .nav-button button:hover { background: rgba(37,99,235,0.1);}
 .dots { cursor:pointer; font-size:1.5rem; font-weight:bold;}
 body { color:white; }
-.card { padding:1rem; margin:0.5rem 0; border-radius:12px; background: rgba(255,255,255,0.05); }
 .ai-search-container { display:flex; justify-content:center; margin-top:3rem; }
 .ai-search-input { font-weight:700; font-size:1.3rem; border:3px solid #2563eb; border-radius:15px;
-padding:1rem 2rem; width:70%; text-align:center; box-shadow:0 0 20px rgba(37,99,235,0.4);
+padding:1rem 1.5rem; width:60%; text-align:left; box-shadow:0 0 20px rgba(37,99,235,0.4);
 transition: box-shadow 0.3s, transform 0.3s; }
-.ai-search-input:focus { outline:none; box-shadow:0 0 40px rgba(37,99,235,0.8); transform:scale(1.02);
-animation: glow 2s infinite;}
-@keyframes glow {0% { box-shadow:0 0 20px rgba(37,99,235,0.4);}
-50% { box-shadow:0 0 40px rgba(37,99,235,0.8);}
-100% { box-shadow:0 0 20px rgba(37,99,235,0.4);}}
+.ai-search-button { margin-left: -45px; background:none; border:none; font-size:1.5rem; cursor:pointer;}
+.ai-search-input:focus { outline:none; box-shadow:0 0 40px rgba(37,99,235,0.8); transform:scale(1.02);}
 </style>
 """, unsafe_allow_html=True)
 
 # ---------------- NAVBAR ----------------
-with st.container():
-    nav_buttons_html = "".join([f"""<span class="nav-button">
-    <button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
-    </span>""" for k,v in PAGES.items()])
-    st.markdown(f"""
-    <div class="navbar">
-        <div class="logo">💡 FinAI</div>
-        <div class="nav-links">{nav_buttons_html}</div>
-        <div class="dots">⋮</div>
-    </div>
-    """, unsafe_allow_html=True)
+nav_buttons_html = "".join([f"""<span class="nav-button">
+<button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
+</span>""" for k,v in PAGES.items()])
+st.markdown(f"""
+<div class="navbar">
+    <div class="logo">💡 FinAI</div>
+    <div class="nav-links">{nav_buttons_html}</div>
+    <div class="dots">⋮</div>
+</div>
+""", unsafe_allow_html=True)
 
 # ---------------- NAV BUTTON LOGIC ----------------
 for key in PAGES.keys():
@@ -123,9 +123,13 @@ body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}
 st.title(PAGES[st.session_state.page])
 st.write(SECTION_TEXT[st.session_state.page])
 
-# ---------------- HOME PAGE ----------------
+# ---------------- HOME PAGE with AI SEARCH ----------------
 if st.session_state.page == "home":
-    st.markdown('<div class="ai-search-container"><input class="ai-search-input" type="text" placeholder="🔍 Ask FinAI anything..."></div>', unsafe_allow_html=True)
+    query = st.text_input("🔍 Ask FinAI anything...", st.session_state.ai_query, key="ai_input")
+    if st.button("Submit"):
+        st.session_state.ai_query = query
+        # For demonstration: simply echo
+        st.success(f"You asked: {query}")
 
 # ---------------- BUSINESS TAX OPTIMIZATION ----------------
 if st.session_state.page == "business_tax":
