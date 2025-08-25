@@ -1,6 +1,6 @@
 import streamlit as st
-import numpy as np
 import pandas as pd
+import numpy as np
 import plotly.express as px
 
 # ---------------- PAGE CONFIG ----------------
@@ -8,7 +8,7 @@ st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
 # ---------------- SESSION STATE ----------------
 if "user_type" not in st.session_state:
-    st.session_state.user_type = None  # business/family
+    st.session_state.user_type = None
 if "page" not in st.session_state:
     st.session_state.page = "home"
 if "ai_query" not in st.session_state:
@@ -26,8 +26,6 @@ display:flex; justify-content:space-between; align-items:center; z-index:1000; }
 .nav-button button { background:none; border:none; font-weight:600; padding:0.3rem 0.8rem;
 border-radius:6px; cursor:pointer; transition: background 0.3s;}
 .nav-button button:hover { background: rgba(37,99,235,0.1);}
-.dots { cursor:pointer; font-size:1.5rem; font-weight:bold;}
-body { color:white; }
 .ai-search-container { display:flex; justify-content:center; margin-top:3rem; }
 .ai-search-input { font-weight:700; font-size:1.3rem; border:3px solid #2563eb; border-radius:15px;
 padding:1rem 1.5rem; width:60%; text-align:left; box-shadow:0 0 20px rgba(37,99,235,0.4);
@@ -79,30 +77,18 @@ def get_pages():
             "estate": "Estate Planning",
             "premium": "Premium Modules"
         }
-
-# ---------------- BACKGROUND ----------------
-BG_STYLES = {
-    "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
-    "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
-    "family_tax": "linear-gradient(135deg, #11998e 0%, #38ef7d 100%)",
-    "investments": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)",
-    "sme": "linear-gradient(135deg, #485563 0%, #29323c 100%)",
-    "estate": "linear-gradient(135deg, #8e44ad 0%, #6c3483 100%)",
-    "premium": "linear-gradient(135deg, #f7971e 0%, #ffd200 100%)"
-}
+    else:
+        return None
 
 # ---------------- NAVBAR ----------------
 def show_navbar(pages):
-    nav_buttons_html = "".join([f"""<span class="nav-button">
-<button onclick="window.parent.postMessage({{page: '{k}'}}, '*')">{v}</button>
-</span>""" for k,v in pages.items()])
-    st.markdown(f"""
-    <div class="navbar">
-        <div class="logo">💡 FinAI</div>
-        <div class="nav-links">{nav_buttons_html}</div>
-        <div class="dots" onclick="window.parent.postMessage({{reset:true}}, '*')">⋮</div>
-    </div>
-    """, unsafe_allow_html=True)
+    if not pages:
+        return  # don't show navbar if pages is None
+    cols = st.columns(len(pages))
+    for idx, (key, name) in enumerate(pages.items()):
+        with cols[idx]:
+            if st.button(name):
+                st.session_state.page = key
 
 # ---------------- AI SEARCH ----------------
 def ai_search():
@@ -113,7 +99,6 @@ def ai_search():
         if submitted and query:
             st.session_state.ai_query = query.lower()
             pages = get_pages()
-            # Simple keyword routing
             keyword_map = {
                 "business_tax": ["business tax", "tax optimization", "tax"],
                 "family_tax": ["family tax", "deduction", "family"],
@@ -124,7 +109,7 @@ def ai_search():
             }
             redirected = False
             for page_key, keywords in keyword_map.items():
-                if any(k in st.session_state.ai_query for k in keywords) and page_key in pages:
+                if any(k in st.session_state.ai_query for k in keywords) and pages and page_key in pages:
                     st.session_state.page = page_key
                     redirected = True
                     break
@@ -133,45 +118,29 @@ def ai_search():
             st.experimental_rerun()
     st.markdown('</div>', unsafe_allow_html=True)
 
-# ---------------- HOME PAGE ----------------
+# ---------------- PAGES ----------------
 def show_home():
     st.markdown("### Welcome to FinAI! 💡")
-    st.write("Type in the AI search bar above or select your user type below.")
+    st.write("Use the AI search bar above to navigate or select modules below.")
 
-# ---------------- BUSINESS TAX ----------------
 def show_business_tax():
     st.subheader("Business Tax Optimization")
-    revenue = st.number_input("Annual Revenue (R)", 0.0, 100000.0, help="Total revenue for the year")
-    expenses = st.number_input("Total Expenses (R)", 0.0, 50000.0, help="Deductible business expenses")
+    revenue = st.number_input("Annual Revenue (R)", 0.0, 1000000.0, help="Total revenue for the year")
+    expenses = st.number_input("Total Expenses (R)", 0.0, 500000.0, help="Deductible business expenses")
     profit = revenue - expenses
     st.write(f"Profit: R{profit:,.2f}")
     tax_rate = 0.28 if profit > 1000000 else 0.15
-    tax_payable = profit * tax_rate
-    st.write(f"Estimated Tax Payable: R{tax_payable:,.2f} at {tax_rate*100}% rate")
+    st.write(f"Estimated Tax Payable: R{profit*tax_rate:,.2f} at {tax_rate*100}% rate")
 
-# ---------------- FAMILY TAX ----------------
 def show_family_tax():
     st.subheader("Family Tax Optimization")
-    salary = st.number_input("Annual Salary (R)", 0.0, 350000.0)
-    other_income = st.number_input("Other Income (R)", 0.0, 0.0)
-    deductions = st.number_input("Deductions (R)", 0.0, 15000.0)
+    salary = st.number_input("Annual Salary (R)", 0.0, 2000000.0)
+    other_income = st.number_input("Other Income (R)", 0.0, 500000.0)
+    deductions = st.number_input("Deductions (R)", 0.0, 150000.0)
     taxable_income = max(0, salary + other_income - deductions)
-    brackets = [(0, 237100, 0.18, 0),
-                (237101, 370500, 0.26, 42678),
-                (370501, 512800, 0.31, 77362),
-                (512801, 673000, 0.36, 121910),
-                (673001, 857900, 0.39, 179258),
-                (857901, 1817000, 0.41, 251258),
-                (1817001, np.inf, 0.45, 644489)]
-    tax_owed = 0
-    for low, high, rate, base in brackets:
-        if low <= taxable_income <= high:
-            tax_owed = base + (taxable_income - low) * rate
-            break
     st.write(f"Taxable Income: R{taxable_income:,.2f}")
-    st.write(f"Estimated Tax Owed: R{tax_owed:,.2f}")
+    st.write(f"Estimated Tax Owed: R{taxable_income*0.25:,.2f}")  # simple flat 25% for example
 
-# ---------------- SME DASHBOARD ----------------
 def show_sme():
     st.subheader("SME Dashboard")
     employees = st.number_input("Number of Employees", 0, 1000, 10)
@@ -180,12 +149,11 @@ def show_sme():
     st.write(f"Total Monthly Payroll: R{monthly_expense:,.2f}")
     st.write(f"Annual Payroll: R{monthly_expense*12:,.2f}")
 
-# ---------------- INVESTMENTS ----------------
 def show_investments():
     st.subheader("Investment Growth Simulator")
-    principal = st.number_input("Initial Investment (R)", 0.0, 100000.0)
-    monthly = st.number_input("Monthly Contribution (R)", 0.0, 5000.0)
-    years = st.number_input("Years", 1, 50, 10)
+    principal = st.number_input("Initial Investment (R)", 0.0, 1000000.0)
+    monthly = st.number_input("Monthly Contribution (R)", 0.0, 50000.0)
+    years = st.number_input("Investment Period (Years)", 1, 50, 10)
     rate = st.slider("Expected Annual Return (%)", 0.0, 20.0, 7.0)/100
     months = years*12
     balances = []
@@ -198,15 +166,12 @@ def show_investments():
     fig = px.line(df_inv, x="Month", y="Balance", title="Investment Growth Over Time")
     st.plotly_chart(fig, use_container_width=True)
 
-# ---------------- ESTATE PLANNING ----------------
 def show_estate():
     st.subheader("Estate Planning")
-    estate_value = st.number_input("Total Estate Value (R)", 0.0, 2000000.0)
+    estate_value = st.number_input("Total Estate Value (R)", 0.0, 5000000.0)
     heirs = st.number_input("Number of Heirs", 1, 50, 2)
-    per_heir = estate_value / heirs
-    st.write(f"Estimated Amount per Heir: R{per_heir:,.2f}")
+    st.write(f"Estimated Amount per Heir: R{estate_value/heirs:,.2f}")
 
-# ---------------- PREMIUM ----------------
 def show_premium():
     st.subheader("Premium Modules")
     st.write("Advanced analytics, AI-driven recommendations, charts, and simulations.")
@@ -215,6 +180,7 @@ def show_premium():
 pages = get_pages()
 show_navbar(pages)
 ai_search()
+
 if st.session_state.page == "home" and st.session_state.user_type is None:
     select_user_type()
 elif st.session_state.page == "home":
