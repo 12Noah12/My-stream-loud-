@@ -1,213 +1,219 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
-import matplotlib.pyplot as plt
-from PIL import Image
-import xlsxwriter
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import io
-import openai
+from io import BytesIO
+from fpdf import FPDF
 
-# ---------------- PAGE CONFIG ----------------
+# --- PAGE CONFIG ---
 st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
-# ---------------- BACKGROUND IMAGE ----------------
-BG_IMAGE_URL = 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80'
-st.markdown(f"""
-    <style>
-    .stApp {{
-        background-image: url('{BG_IMAGE_URL}');
-        background-size: cover;
-        background-position: center;
-    }}
-    input[type=text] {{
-        font-size: 1.2em;
-        padding: 0.5em;
-    }}
-    </style>
-""", unsafe_allow_html=True)
-
-# ---------------- SESSION STATE ----------------
-if 'page' not in st.session_state:
-    st.session_state.page = 'home'
-if 'user_type' not in st.session_state:
-    st.session_state.user_type = None
-if 'privacy_accepted' not in st.session_state:
+# --- SESSION STATE ---
+if "page" not in st.session_state:
+    st.session_state.page = "home"
+if "privacy_accepted" not in st.session_state:
     st.session_state.privacy_accepted = False
-if 'ai_response' not in st.session_state:
-    st.session_state.ai_response = ""
+
+# --- NAVIGATION ---
+PAGES = ["home", "household", "individual", "business"]
+
+# --- BACKGROUND IMAGES ---
+BG_IMAGES = {
+    "home": "url('https://images.unsplash.com/photo-1542223616-5f4cfc1dfd92?auto=format&fit=crop&w=1470&q=80')",
+    "household": "url('https://images.unsplash.com/photo-1504198453319-5ce911bafcde?auto=format&fit=crop&w=1470&q=80')",
+    "individual": "url('https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1470&q=80')",
+    "business": "url('https://images.unsplash.com/photo-1554224154-22dec7ec8818?auto=format&fit=crop&w=1470&q=80')"
+}
+
+# --- STYLING ---
+st.markdown(f"""
+<style>
+.stApp {{
+    background-image: {BG_IMAGES.get(st.session_state.page, '')};
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}}
+.stApp .block-container {{
+    position: relative;
+    z-index: 1;
+    padding: 2rem;
+    background: rgba(0,0,0,0.45);
+    border-radius: 12px;
+    color: #ffffff;
+    max-width: 900px;
+    margin: 4rem auto;
+    text-align: center;
+}}
+input[type=text], input[type=number] {{
+    font-size: 1.2em;
+    padding: 0.8em;
+    border-radius: 10px;
+    border: 2px solid #ffffff;
+    background-color: rgba(255,255,255,0.9);
+    color: #000000;
+    width: 70%;
+    display: block;
+    margin: 1rem auto;
+    text-align: center;
+}}
+input[type=text]::placeholder {{
+    color: #555555;
+    font-weight: bold;
+}}
+input[type=text]:focus, input[type=number]:focus {{
+    outline: none;
+    box-shadow: 0 0 20px #ffffff;
+}}
+.user-type-btn {{
+    padding: 1rem 2rem;
+    margin: 1rem;
+    font-size: 1.1em;
+    border-radius: 8px;
+    border: 2px solid #ffffff;
+    background-color: rgba(255,255,255,0.8);
+    color: #000000;
+    font-weight: bold;
+    cursor: pointer;
+    transition: 0.3s;
+}}
+.user-type-btn:hover {{
+    background-color: rgba(255,255,255,1);
+}}
+.section-title {{
+    font-size: 1.5em;
+    font-weight: bold;
+    margin-top: 1rem;
+    margin-bottom: 0.5rem;
+}}
+</style>
+""", unsafe_allow_html=True)
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.title("Privacy Agreement")
+    st.markdown("## Privacy & Data Agreement")
     st.markdown("""
-        All data entered is stored securely. By clicking 'Accept', you enter a legally binding agreement.
-        If you do not accept, you will be redirected.
+    All information you enter is stored securely in encrypted storage. By clicking 'Accept', you acknowledge and agree that:
+    - FinAI will use your data solely to generate personalized financial advice.
+    - Data is stored securely and will not be shared with third parties.
+    - This is a legally binding agreement.
     """)
-    accept = st.checkbox("I accept the privacy agreement")
+    accept = st.checkbox("I ACCEPT the privacy agreement")
     if accept:
         st.session_state.privacy_accepted = True
     else:
-        st.error("You must accept to continue.")
+        st.warning("You must accept to continue.")
         st.stop()
 
-# ---------------- NAVBAR ----------------
-def show_navbar(pages):
-    cols = st.columns(len(pages))
-    for i, (key, label) in enumerate(pages.items()):
-        if cols[i].button(label):
-            st.session_state.page = key
-
-# ---------------- AI SEARCH ----------------
-def ai_search():
-    st.subheader("Describe your financial situation or goals")
-    query = st.text_input("", placeholder="Type anything about your finances, business, or family...")
-    if st.button("Submit") and query:
-        response = get_ai_redirect(query)
-        st.session_state.user_type = response
-        st.session_state.page = 'dashboard'
-        st.experimental_rerun()
-
-# ---------------- GPT BACKEND ----------------
-def get_ai_redirect(text):
-    # Replace with your actual OpenAI API key
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if not openai.api_key:
-        st.warning("OpenAI API key not found, defaulting to Individual.")
-        return 'individual'
-
-    try:
-        prompt = f"""
-        Determine if this query is best for 'individual', 'family', or 'business' financial advice:
-        {text}
-        Return only one of: individual, family, business
-        """
-        completion = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=10
-        )
-        result = completion.choices[0].text.strip().lower()
-        if result not in ['individual', 'family', 'business']:
-            return 'individual'
-        return result
-    except:
-        return 'individual'
-
-# ---------------- USER TYPE SELECTION ----------------
-def select_user_type():
-    st.subheader("Choose your category")
-    col1, col2, col3 = st.columns(3)
-    if col1.button("Individual"):
-        st.session_state.user_type = 'individual'
-        st.session_state.page = 'dashboard'
-        st.experimental_rerun()
-    if col2.button("Family"):
-        st.session_state.user_type = 'family'
-        st.session_state.page = 'dashboard'
-        st.experimental_rerun()
-    if col3.button("Business"):
-        st.session_state.user_type = 'business'
-        st.session_state.page = 'dashboard'
-        st.experimental_rerun()
-
-# ---------------- DASHBOARD ----------------
-def dashboard():
-    st.title(f"{st.session_state.user_type.capitalize()} Dashboard")
-    user_type = st.session_state.user_type
-
-    inputs = {}
-    if user_type == 'individual':
-        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f")
-        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f")
-    elif user_type == 'family':
-        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f")
-        inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1)
-        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f")
-    elif user_type == 'business':
-        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f")
-        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f")
-        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1)
-
-    if st.button("Get Personalized Advice"):
-        advice = generate_advice_gpt(user_type, inputs)
-        st.info(advice)
-
-    if st.button("Download PDF Report"):
-        pdf_bytes = create_pdf(inputs, user_type, advice)
-        st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
-
-    if st.button("Download Excel Report"):
-        excel_bytes = create_excel(inputs, user_type, advice)
-        st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
-
-# ---------------- GPT ADVICE ----------------
-def generate_advice_gpt(user_type, inputs):
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if not openai.api_key:
-        return "OpenAI API key not found. Cannot generate advice."
-
-    try:
-        input_text = "\n".join([f"{k}: {v}" for k,v in inputs.items()])
-        prompt = f"""
-        You are a professional financial advisor. Based on these user inputs:
-        {input_text}
-        Provide actionable financial advice in 3-4 bullet points. Do NOT give the full instructions, encourage the user to contact us to implement solutions.
-        """
-        completion = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=300
-        )
-        return completion.choices[0].text.strip()
-    except:
-        return "Unable to generate advice at this time."
-
-# ---------------- PDF ----------------
-def create_pdf(inputs, user_type, advice):
-    buffer = io.BytesIO()
-    c = canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica", 12)
-    c.drawString(50,750,f"User Type: {user_type.capitalize()}")
-    y = 730
-    for k,v in inputs.items():
-        c.drawString(50,y,f"{k}: {v}")
-        y -= 20
-    c.drawString(50,y-10,"Advice:")
-    y -= 30
-    for line in advice.split("\n"):
-        c.drawString(70,y,line)
-        y -= 20
-    c.save()
-    pdf = buffer.getvalue()
-    buffer.close()
-    return pdf
-
-# ---------------- EXCEL ----------------
-def create_excel(inputs, user_type, advice):
-    output = io.BytesIO()
-    workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-    worksheet = workbook.add_worksheet()
-    worksheet.write('A1', 'User Type')
-    worksheet.write('B1', user_type)
-    row = 1
-    for k,v in inputs.items():
-        worksheet.write(row,0,k)
-        worksheet.write(row,1,v)
-        row += 1
-    worksheet.write(row,0,"Advice")
-    worksheet.write(row,1,advice)
-    workbook.close()
-    return output.getvalue()
-
-# ---------------- MAIN ----------------
 if not st.session_state.privacy_accepted:
     privacy_agreement()
 
-if st.session_state.page == 'home':
+# ---------------- FRONT PAGE ----------------
+if st.session_state.page == "home":
     st.title("Welcome to FinAI")
-    ai_search()
-    select_user_type()
-elif st.session_state.page == 'dashboard':
-    dashboard()
+    st.markdown("Enter your financial questions below, and our AI will direct you to tailored advice.")
+    query = st.text_input("Ask FinAI anything...", "")
+    
+    # --- AI SEARCH REDIRECT ---
+    if query:
+        q = query.lower()
+        if any(word in q for word in ["household", "family", "kids", "income", "expenses"]):
+            st.session_state.page = "household"
+        elif any(word in q for word in ["business", "corporate", "company", "expenses", "revenue"]):
+            st.session_state.page = "business"
+        else:
+            st.session_state.page = "individual"
+        st.experimental_rerun()
+
+    st.markdown("Or choose your category to start:")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        if st.button("Household"):
+            st.session_state.page = "household"
+            st.experimental_rerun()
+    with col2:
+        if st.button("Individual"):
+            st.session_state.page = "individual"
+            st.experimental_rerun()
+    with col3:
+        if st.button("Business/Corporate"):
+            st.session_state.page = "business"
+            st.experimental_rerun()
+
+# ---------------- HOUSEHOLD FINANCE ----------------
+elif st.session_state.page == "household":
+    st.header("Household Finance Dashboard")
+    st.markdown("Fill in your household income, deductions, and expenses to get personalized advice.")
+
+    salary = st.number_input("Monthly Salary (ZAR)", min_value=0.0, format="%.2f")
+    other_income = st.number_input("Other Monthly Income (ZAR)", min_value=0.0, format="%.2f")
+    deductions = st.number_input("Current Deductions (ZAR)", min_value=0.0, format="%.2f")
+    children = st.number_input("Number of Dependents", min_value=0)
+
+    if st.button("Generate Advice"):
+        total_income = salary + other_income
+        est_tax_savings = min(deductions * 0.3, total_income * 0.2)
+        st.markdown("### Recommended Actions:")
+        st.markdown(f"""
+        - Optimize deductions to save approximately **ZAR {est_tax_savings:,.2f} per month**.
+        - Consider child-related tax credits.
+        - Invest in tax-efficient savings accounts.
+        - Contact us to implement full strategy.
+        """)
+
+        df = pd.DataFrame({
+            "Income Type": ["Salary", "Other Income", "Deductions", "Est. Tax Savings"],
+            "Amount ZAR": [salary, other_income, deductions, est_tax_savings]
+        })
+        towrite = BytesIO()
+        df.to_excel(towrite, index=False)
+        st.download_button(label="Download Excel Report", data=towrite.getvalue(), file_name="household_finance.xlsx")
+
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", size=12)
+        pdf.cell(200, 10, txt="Household Finance Report", ln=True, align='C')
+        pdf.ln(10)
+        pdf.cell(0, 10, txt=f"Salary: ZAR {salary:,.2f}", ln=True)
+        pdf.cell(0, 10, txt=f"Other Income: ZAR {other_income:,.2f}", ln=True)
+        pdf.cell(0, 10, txt=f"Deductions: ZAR {deductions:,.2f}", ln=True)
+        pdf.cell(0, 10, txt=f"Estimated Tax Savings: ZAR {est_tax_savings:,.2f}", ln=True)
+        pdf_output = BytesIO()
+        pdf.output(pdf_output)
+        st.download_button(label="Download PDF Report", data=pdf_output.getvalue(), file_name="household_finance.pdf")
+
+# ---------------- INDIVIDUAL FINANCE ----------------
+elif st.session_state.page == "individual":
+    st.header("Individual Finance Dashboard")
+    income = st.number_input("Monthly Income (ZAR)", min_value=0.0, format="%.2f")
+    expenses = st.number_input("Monthly Expenses (ZAR)", min_value=0.0, format="%.2f")
+    investments = st.number_input("Current Investments (ZAR)", min_value=0.0, format="%.2f")
+    if st.button("Generate Advice"):
+        est_savings = max(income - expenses - investments, 0)
+        st.markdown("### Recommended Actions:")
+        st.markdown(f"""
+        - Your estimated monthly savings: **ZAR {est_savings:,.2f}**.
+        - Invest in tax-efficient products.
+        - Review recurring expenses for optimization.
+        - Contact us for detailed investment planning.
+        """)
+
+# ---------------- BUSINESS FINANCE ----------------
+elif st.session_state.page == "business":
+    st.header("Business/Corporate Dashboard")
+    revenue = st.number_input("Monthly Revenue (ZAR)", min_value=0.0, format="%.2f")
+    business_expenses = st.number_input("Monthly Business Expenses (ZAR)", min_value=0.0, format="%.2f")
+    employees = st.number_input("Number of Employees", min_value=0)
+    if st.button("Generate Advice"):
+        est_tax_savings = business_expenses * 0.3
+        st.markdown("### Recommended Actions:")
+        st.markdown(f"""
+        - Estimated monthly tax savings: **ZAR {est_tax_savings:,.2f}**
+        - Use company card for deductible business expenses.
+        - Optimize employee-related tax credits.
+        - Contact us to implement full tax strategy.
+        """)
+
+# ---------------- RETURN TO HOME ----------------
+if st.session_state.page != "home":
+    if st.button("Return to Home"):
+        st.session_state.page = "home"
+        st.experimental_rerun()
