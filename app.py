@@ -11,6 +11,9 @@ st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 if "user_type" not in st.session_state:
     st.session_state.user_type = None
 
+# Default PAGES dictionary
+PAGES = {"home": "Home"}
+
 if st.session_state.user_type is None:
     st.title("Welcome to FinAI! 💡")
     st.write("Please select your user type to see relevant tools:")
@@ -21,26 +24,27 @@ if st.session_state.user_type is None:
     if col2.button("🏠 Family"):
         st.session_state.user_type = "family"
         st.experimental_rerun()
+else:
+    # User type is set, define PAGES accordingly
+    if st.session_state.user_type == "business":
+        PAGES = {
+            "home": "Home",
+            "business_tax": "Business Tax Optimization",
+            "investments": "Investments",
+            "sme": "SME Dashboard",
+            "estate": "Estate Planning",
+            "premium": "Premium Modules"
+        }
+    elif st.session_state.user_type == "family":
+        PAGES = {
+            "home": "Home",
+            "family_tax": "Family Tax Optimization",
+            "investments": "Investments",
+            "estate": "Estate Planning",
+            "premium": "Premium Modules"
+        }
 
-# ---------------- FILTER PAGES ----------------
-if st.session_state.user_type == "business":
-    PAGES = {
-        "home": "Home",
-        "business_tax": "Business Tax Optimization",
-        "investments": "Investments",
-        "sme": "SME Dashboard",
-        "estate": "Estate Planning",
-        "premium": "Premium Modules"
-    }
-elif st.session_state.user_type == "family":
-    PAGES = {
-        "home": "Home",
-        "family_tax": "Family Tax Optimization",
-        "investments": "Investments",
-        "estate": "Estate Planning",
-        "premium": "Premium Modules"
-    }
-
+# ---------------- BACKGROUND STYLES ----------------
 BG_STYLES = {
     "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
     "business_tax": "linear-gradient(135deg, #00c6ff 0%, #0072ff 100%)",
@@ -85,6 +89,7 @@ st.markdown("""
 .nav-button button:hover { background: rgba(37,99,235,0.1); }
 .dots { cursor: pointer; font-size: 1.5rem; font-weight: bold; }
 .dots:hover { color: #2563eb; }
+.dots:active { transform: scale(0.95); }
 body { color: white; }
 
 .card { padding:1rem; margin:0.5rem 0; border-radius:12px; background: rgba(255,255,255,0.05); }
@@ -154,7 +159,16 @@ st.write(SECTION_TEXT[st.session_state.page])
 if st.session_state.page == "home":
     st.markdown('<div class="ai-search-container"><input class="ai-search-input" type="text" placeholder="🔍 Ask FinAI anything..."></div>', unsafe_allow_html=True)
 
-# ---------------- BUSINESS TAX ----------------
-# ... same as previous full code for business_tax, family_tax, investments, sme, estate, premium modules ...
-# (use the code I provided earlier for all forms and calculations)
-
+# ---------------- PLACEHOLDER MODULES ----------------
+if st.session_state.page == "business_tax":
+    st.subheader("Business Tax Optimization Tools Coming Soon 🚀")
+if st.session_state.page == "family_tax":
+    st.subheader("Family Tax Optimization Tools Coming Soon 🚀")
+if st.session_state.page == "investments":
+    st.subheader("Investment Recommendations Dashboard 📊")
+if st.session_state.page == "sme":
+    st.subheader("SME Dashboard: Manage Your Business 📂")
+if st.session_state.page == "estate":
+    st.subheader("Estate Planning Tools ⚖️")
+if st.session_state.page == "premium":
+    st.subheader("Premium AI Modules 🌟 Coming Soon 🚀")
