@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from PIL import Image
 import xlsxwriter
 from reportlab.lib.pagesizes import letter
@@ -19,15 +20,24 @@ st.markdown(f"""
         background-image: url('{BG_IMAGE_URL}');
         background-size: cover;
         background-position: center;
+        color: black;
     }}
-    .black-font button {{
-        color: black !important;
-        font-weight: bold !important;
-        font-size: 16px !important;
-    }}
-    input[type=text] {{
-        font-size: 1.2em;
+    input[type=text], input[type=number] {{
+        font-size: 1.1em;
         padding: 0.5em;
+        color: black;
+    }}
+    .glow-input {{
+        box-shadow: 0 0 8px 2px #4caf50;
+        border-radius: 5px;
+    }}
+    .white-box {{
+        background-color: rgba(255, 255, 255, 0.85);
+        padding: 15px;
+        border-radius: 10px;
+    }}
+    h1, h2, h3 {{
+        color: black;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -41,19 +51,28 @@ if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
+if 'advice' not in st.session_state:
+    st.session_state.advice = ""
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.markdown("<h1 style='color:white'>Privacy Agreement</h1>", unsafe_allow_html=True)
+    st.title("Privacy Agreement")
     st.markdown("""
-        <p style='color:white'>
-        By entering your data, you consent to the storage and processing of this information securely. 
-        This information is used solely for providing personalized financial advice. 
-        By clicking 'Accept', you enter a legally binding agreement that your information will be used 
-        for advisory purposes only. If you do not accept, you cannot continue to the platform.
-        </p>
+    <div style='color:white'>
+    <p>
+    This website, FinAI, collects data provided by you to generate personalized financial advice.
+    By clicking 'Accept', you acknowledge that:
+    </p>
+    <ul>
+        <li>All information entered is securely stored in compliance with data privacy regulations.</li>
+        <li>FinAI and its team are not liable for financial outcomes based on the advice given.</li>
+        <li>Advice is general and requires professional consultation to implement fully.</li>
+        <li>Clicking 'Accept' constitutes a legally binding agreement to these terms.</li>
+    </ul>
+    <p>If you do not accept, you will be redirected from the website.</p>
+    </div>
     """, unsafe_allow_html=True)
-    accept = st.checkbox("I accept the privacy agreement")
+    accept = st.checkbox("I ACCEPT")
     if accept:
         st.session_state.privacy_accepted = True
     else:
@@ -70,7 +89,7 @@ def show_navbar(pages):
 # ---------------- AI SEARCH ----------------
 def ai_search():
     st.subheader("Describe your financial situation or goals")
-    query = st.text_input("", placeholder="Type anything about your finances, business, or household...")
+    query = st.text_input("", placeholder="Type anything about your finances, business, or household...", key="ai_input", label_visibility="collapsed")
     if st.button("Submit") and query:
         response = get_ai_redirect(query)
         st.session_state.user_type = response
@@ -79,9 +98,10 @@ def ai_search():
 
 # ---------------- GPT BACKEND ----------------
 def get_ai_redirect(text):
+    # Replace with your actual OpenAI API key
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
-        st.warning("OpenAI API key not found, defaulting to Individual.")
+        st.warning("OpenAI API key not found. Defaulting to Individual advice.")
         return 'individual'
 
     try:
@@ -106,27 +126,17 @@ def get_ai_redirect(text):
 def select_user_type():
     st.subheader("Choose your category")
     col1, col2, col3 = st.columns(3)
-
-    if 'rerun_pending' not in st.session_state:
-        st.session_state.rerun_pending = False
-
-    if col1.button("Individual", key="btn_individual") and not st.session_state.rerun_pending:
+    if col1.button("Individual"):
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
-        st.session_state.rerun_pending = True
-
-    if col2.button("Household", key="btn_household") and not st.session_state.rerun_pending:
+        st.experimental_rerun()
+    if col2.button("Household"):
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
-        st.session_state.rerun_pending = True
-
-    if col3.button("Business", key="btn_business") and not st.session_state.rerun_pending:
+        st.experimental_rerun()
+    if col3.button("Business"):
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
-        st.session_state.rerun_pending = True
-
-    if st.session_state.rerun_pending:
-        st.session_state.rerun_pending = False
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
@@ -134,30 +144,48 @@ def dashboard():
     st.title(f"{st.session_state.user_type.capitalize()} Dashboard")
     user_type = st.session_state.user_type
 
-    inputs = {}
-    if user_type == 'individual':
-        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f")
-        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f")
-    elif user_type == 'household':
-        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f")
-        inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1)
-        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f")
-    elif user_type == 'business':
-        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f")
-        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f")
-        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1)
+    with st.container():
+        st.subheader("Input Your Financial Details")
+        inputs = {}
+        if user_type == 'individual':
+            inputs['Income'] = st.number_input("Annual Income (R)", min_value=0.0, format="%.2f")
+            inputs['Deductions'] = st.number_input("Annual Deductions (R)", min_value=0.0, format="%.2f")
+        elif user_type == 'household':
+            inputs['Household Income'] = st.number_input("Household Annual Income (R)", min_value=0.0, format="%.2f")
+            inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1)
+            inputs['Deductions'] = st.number_input("Total Household Deductions (R)", min_value=0.0, format="%.2f")
+        elif user_type == 'business':
+            inputs['Revenue'] = st.number_input("Annual Revenue (R)", min_value=0.0, format="%.2f")
+            inputs['Expenses'] = st.number_input("Annual Expenses (R)", min_value=0.0, format="%.2f")
+            inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1)
 
     if st.button("Get Personalized Advice"):
         advice = generate_advice_gpt(user_type, inputs)
+        st.session_state.advice = advice
         st.info(advice)
 
-    if st.button("Download PDF Report"):
-        pdf_bytes = create_pdf(inputs, user_type, advice)
-        st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
+        # Display Graphs
+        st.subheader("Financial Overview")
+        fig, ax = plt.subplots()
+        if user_type == 'individual':
+            ax.bar(inputs.keys(), inputs.values(), color=['#4caf50','#f44336'])
+            ax.set_ylabel("Amount (R)")
+        elif user_type == 'household':
+            ax.bar(['Income','Deductions'], [inputs['Household Income'], inputs['Deductions']], color=['#4caf50','#f44336'])
+            ax.set_ylabel("Amount (R)")
+        elif user_type == 'business':
+            ax.bar(['Revenue','Expenses'], [inputs['Revenue'], inputs['Expenses']], color=['#4caf50','#f44336'])
+            ax.set_ylabel("Amount (R)")
+        st.pyplot(fig)
 
-    if st.button("Download Excel Report"):
-        excel_bytes = create_excel(inputs, user_type, advice)
-        st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
+    # Download Reports
+    if st.session_state.advice:
+        if st.button("Download PDF Report"):
+            pdf_bytes = create_pdf(inputs, user_type, st.session_state.advice)
+            st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
+        if st.button("Download Excel Report"):
+            excel_bytes = create_excel(inputs, user_type, st.session_state.advice)
+            st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
 
 # ---------------- GPT ADVICE ----------------
 def generate_advice_gpt(user_type, inputs):
@@ -170,7 +198,8 @@ def generate_advice_gpt(user_type, inputs):
         prompt = f"""
         You are a professional financial advisor. Based on these user inputs:
         {input_text}
-        Provide actionable financial advice in 3-4 bullet points. Do NOT give the full instructions; encourage the user to contact us to implement solutions.
+        Provide actionable financial advice in 3-4 bullet points.
+        Do NOT give the full instructions; encourage the user to contact us to implement solutions.
         """
         completion = openai.Completion.create(
             engine="text-davinci-003",
@@ -228,4 +257,3 @@ if st.session_state.page == 'home':
     select_user_type()
 elif st.session_state.page == 'dashboard':
     dashboard()
-
