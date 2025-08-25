@@ -11,3 +11,4 @@ xlsxwriter
 reportlab
 fpdf
 openpyxl
+requests
