@@ -20,17 +20,18 @@ if st.session_state.user_type is None:
     st.write("Please select your user type to see relevant tools:")
     col1, col2 = st.columns(2)
     
-    if col1.button("👔 Business"):
-        st.session_state.user_type = "business"
-        st.session_state.page = "home"
-        st.experimental_rerun()
+    with col1:
+        if st.button("👔 Business"):
+            st.session_state.user_type = "business"
+            st.session_state.page = "home"
     
-    if col2.button("🏠 Family"):
-        st.session_state.user_type = "family"
-        st.session_state.page = "home"
-        st.experimental_rerun()
+    with col2:
+        if st.button("🏠 Family"):
+            st.session_state.user_type = "family"
+            st.session_state.page = "home"
+    st.stop()  # Wait for selection
 
-# ---------------- PAGES DICTIONARY ----------------
+# ---------------- NAVIGATION PAGES ----------------
 if st.session_state.user_type == "business":
     PAGES = {
         "home": "Home",
@@ -48,8 +49,6 @@ elif st.session_state.user_type == "family":
         "estate": "Estate Planning",
         "premium": "Premium Modules"
     }
-else:
-    st.stop()  # Prevent running further if user_type not selected
 
 # ---------------- BACKGROUND STYLES ----------------
 BG_STYLES = {
@@ -107,11 +106,6 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# ---------------- NAV BUTTON LOGIC ----------------
-for key in PAGES.keys():
-    if st.button(PAGES[key], key=f"btn-{key}"):
-        st.session_state.page = key
-
 # ---------------- BACKGROUND ----------------
 st.markdown(f"""
 <style>
@@ -119,17 +113,18 @@ body {{ background: {BG_STYLES[st.session_state.page]}; color:white; }}
 </style>
 """, unsafe_allow_html=True)
 
-# ---------------- PAGE CONTENT ----------------
+# ---------------- PAGE TITLE ----------------
 st.title(PAGES[st.session_state.page])
 st.write(SECTION_TEXT[st.session_state.page])
 
-# ---------------- HOME PAGE with AI SEARCH ----------------
+# ---------------- HOME PAGE WITH FUNCTIONAL AI SEARCH ----------------
 if st.session_state.page == "home":
-    query = st.text_input("🔍 Ask FinAI anything...", st.session_state.ai_query, key="ai_input")
-    if st.button("Submit"):
-        st.session_state.ai_query = query
-        # For demonstration: simply echo
-        st.success(f"You asked: {query}")
+    with st.form("ai_form"):
+        query = st.text_input("🔍 Ask FinAI anything...", st.session_state.ai_query)
+        submitted = st.form_submit_button("Submit")
+        if submitted and query:
+            st.session_state.ai_query = query
+            st.success(f"You asked: {query}")
 
 # ---------------- BUSINESS TAX OPTIMIZATION ----------------
 if st.session_state.page == "business_tax":
@@ -145,9 +140,9 @@ if st.session_state.page == "business_tax":
 # ---------------- FAMILY TAX OPTIMIZATION ----------------
 if st.session_state.page == "family_tax":
     st.subheader("Family Tax Optimization Calculator")
-    salary = st.number_input("Annual Salary (R)", min_value=0.0, value=350000.0, help="Total salary income")
-    other_income = st.number_input("Other Income (R)", min_value=0.0, value=0.0, help="Dividends, interest etc")
-    deductions = st.number_input("Deductions (R)", min_value=0.0, value=15000.0, help="Retirement contributions, etc")
+    salary = st.number_input("Annual Salary (R)", min_value=0.0, value=350000.0)
+    other_income = st.number_input("Other Income (R)", min_value=0.0, value=0.0)
+    deductions = st.number_input("Deductions (R)", min_value=0.0, value=15000.0)
     taxable_income = max(0, salary + other_income - deductions)
     brackets = [(0, 237100, 0.18, 0),
                 (237101, 370500, 0.26, 42678),
