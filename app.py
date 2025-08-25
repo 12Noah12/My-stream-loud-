@@ -3,7 +3,15 @@ import random
 from dataclasses import dataclass
 from typing import List, Tuple
 
-import matplotlib.pyplot as plt
+# Safe import for matplotlib: if missing, show message and stop to avoid crashes
+try:
+    import matplotlib.pyplot as plt
+    MATPLOTLIB_OK = True
+except Exception as e:
+    MATPLOTLIB_OK = False
+    plt = None
+    st.error("Matplotlib is not installed. Add `matplotlib` to requirements.txt and redeploy.")
+    st.stop()
 import numpy as np
 import pandas as pd
 import streamlit as st
@@ -625,4 +633,3 @@ elif st.session_state.page == "premium":
     page_premium()
 else:
     page_home()
-
