@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 from PIL import Image
 import xlsxwriter
 from reportlab.lib.pagesizes import letter
@@ -11,7 +12,7 @@ import openai
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(page_title="FinAI", page_icon="💡", layout="wide")
 
-# ---------------- BACKGROUND IMAGE & STYLING ----------------
+# ---------------- BACKGROUND IMAGE ----------------
 BG_IMAGE_URL = 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80'
 st.markdown(f"""
     <style>
@@ -20,29 +21,26 @@ st.markdown(f"""
         background-size: cover;
         background-position: center;
     }}
-    .category-button button {{
-        color: black !important;
-        font-weight: bold;
-        font-size: 1.1em;
-        padding: 0.7em 1em;
-    }}
-    .submit-button button {{
-        color: black !important;
-        font-weight: bold;
-        font-size: 1.0em;
-        padding: 0.6em 1em;
-        background-color: #f2f2f2;
-        border: 2px solid #000;
-        border-radius: 8px;
-        box-shadow: 0 0 8px #f2f2f2;
-        transition: all 0.3s ease-in-out;
-    }}
-    .submit-button button:hover {{
-        box-shadow: 0 0 20px #f2f2f2;
-    }}
     input[type=text], input[type=number] {{
         font-size: 1.2em;
         padding: 0.5em;
+    }}
+    .submit-btn {{
+        background-color: #4CAF50;
+        color: white;
+        font-weight: bold;
+        padding: 0.6em 1.2em;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        box-shadow: 0 0 10px #4CAF50;
+        transition: 0.3s;
+    }}
+    .submit-btn:hover {{
+        box-shadow: 0 0 20px #4CAF50;
+    }}
+    .user-btn {{
+        font-size: 1.2em;
         color: black !important;
     }}
     .privacy-text {{
@@ -60,38 +58,37 @@ if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
-if 'advice' not in st.session_state:
-    st.session_state.advice = ""
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.title("Privacy Agreement", anchor=False)
+    st.markdown("<h1 class='privacy-text'>Privacy Agreement</h1>", unsafe_allow_html=True)
     st.markdown("""
-    <div class='privacy-text'>
-    **Purpose:**<br>
-    This Privacy Agreement ensures all users understand how their data will be collected, stored, and used on FinAI.<br><br>
-    **Data Handling:**<br>
-    All information entered is stored securely on encrypted servers and may be used to generate personalized financial advice, reports, and improve user experience.<br><br>
-    **Legal Obligation:**<br>
-    By clicking 'Accept', you consent to the usage of your data as described and acknowledge this is a legally binding agreement.<br>
-    Non-acceptance will result in immediate termination of access. FinAI is not liable for any data misuse outside this platform.<br><br>
-    **Data Security:**<br>
-    Data will not be shared without explicit consent. Industry-standard security protocols are in place to prevent unauthorized access.
-    </div>
+        <p class='privacy-text'>
+        Welcome to FinAI. All information you enter will be stored securely on encrypted servers. By clicking 'Accept', 
+        you acknowledge and agree that your data will be used solely for generating financial insights and reports. 
+        This agreement is legally binding. If you do not accept, you will not be able to access the platform.
+        </p>
     """, unsafe_allow_html=True)
     accept = st.checkbox("I accept the privacy agreement")
     if accept:
         st.session_state.privacy_accepted = True
     else:
-        st.error("You must accept to continue. You will be redirected.")
+        st.warning("You must accept to continue.")
         st.stop()
+
+# ---------------- NAVBAR ----------------
+def show_navbar(pages):
+    cols = st.columns(len(pages))
+    for i, (key, label) in enumerate(pages.items()):
+        if cols[i].button(label, key=key, help=f"Go to {label}"):
+            st.session_state.page = key
 
 # ---------------- AI SEARCH ----------------
 def ai_search():
     st.subheader("Describe your financial situation or goals")
-    query = st.text_input("", placeholder="Type anything about your finances, household, or business...")
+    query = st.text_input("", placeholder="Type anything about your finances, business, or household...")
     if st.button("Submit", key="ai_submit"):
-        if query.strip():
+        if query.strip() != "":
             response = get_ai_redirect(query)
             st.session_state.user_type = response
             st.session_state.page = 'dashboard'
@@ -101,7 +98,7 @@ def ai_search():
 def get_ai_redirect(text):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
-        st.warning("OpenAI API key not found, defaulting to Individual advice.")
+        st.warning("OpenAI API key not found. Defaulting to Individual.")
         return 'individual'
     try:
         prompt = f"""
@@ -125,17 +122,17 @@ def get_ai_redirect(text):
 def select_user_type():
     st.subheader("Choose your category")
     col1, col2, col3 = st.columns(3)
-    if col1.button("Individual", key="indiv_btn"):
+    if col1.button("Individual", key="btn_individual"):
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
-    if col2.button("Household", key="house_btn"):
+        st.experimental_rerun()
+    if col2.button("Household", key="btn_household"):
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
-    if col3.button("Business", key="bus_btn"):
+        st.experimental_rerun()
+    if col3.button("Business", key="btn_business"):
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
-    # Only rerun after setting the page to prevent AttributeError
-    if st.session_state.page == 'dashboard' and st.session_state.user_type:
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
@@ -144,28 +141,31 @@ def dashboard():
     user_type = st.session_state.user_type
     inputs = {}
 
+    # Input fields with hover tooltips
     if user_type == 'individual':
-        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f")
-        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f")
+        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f", help="Your total income for the year")
+        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f", help="Any deductions you currently claim")
     elif user_type == 'household':
-        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f")
-        inputs['Children'] = st.number_input("Number of Children", min_value=0, format="%d")
-        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f")
+        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f", help="Total household income")
+        inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1, help="Number of children in the household")
+        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f", help="Total deductions currently applied")
     elif user_type == 'business':
-        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f")
-        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f")
-        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, format="%d")
+        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f", help="Total revenue for the business")
+        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f", help="Total business expenses")
+        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1, help="Number of employees in the business")
 
-    if st.button("Get Personalized Advice"):
-        st.session_state.advice = generate_advice_gpt(user_type, inputs)
-        st.info(st.session_state.advice)
+    if st.button("Get Personalized Advice", key="get_advice"):
+        advice = generate_advice_gpt(user_type, inputs)
+        st.info(advice)
 
-    if st.button("Download PDF Report"):
-        pdf_bytes = create_pdf(inputs, user_type, st.session_state.advice)
+    if st.button("Download PDF Report", key="download_pdf"):
+        advice = generate_advice_gpt(user_type, inputs)
+        pdf_bytes = create_pdf(inputs, user_type, advice)
         st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
 
-    if st.button("Download Excel Report"):
-        excel_bytes = create_excel(inputs, user_type, st.session_state.advice)
+    if st.button("Download Excel Report", key="download_excel"):
+        advice = generate_advice_gpt(user_type, inputs)
+        excel_bytes = create_excel(inputs, user_type, advice)
         st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
 
 # ---------------- GPT ADVICE ----------------
@@ -178,7 +178,7 @@ def generate_advice_gpt(user_type, inputs):
         prompt = f"""
         You are a professional financial advisor. Based on these user inputs:
         {input_text}
-        Provide actionable financial advice in 3-4 bullet points. Do NOT give the full instructions; encourage the user to contact us to implement solutions.
+        Provide actionable financial advice in 3-4 bullet points. Do NOT give full instructions; encourage contacting us.
         """
         completion = openai.Completion.create(
             engine="text-davinci-003",
