@@ -6,3 +6,6 @@ openai
 stripe
 python-dotenv
 matplotlib
+Pillow
+xlsxwriter
+reportlab
