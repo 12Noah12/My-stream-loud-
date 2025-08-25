@@ -26,7 +26,7 @@ if st.session_state.user_type is None:
         st.session_state.user_type = "family"
         st.experimental_rerun()
 
-# ---------------- PAGE NAVIGATION ----------------
+# ---------------- PAGES DICTIONARY ----------------
 if st.session_state.user_type == "business":
     PAGES = {
         "home": "Home",
@@ -45,7 +45,7 @@ elif st.session_state.user_type == "family":
         "premium": "Premium Modules"
     }
 else:
-    PAGES = {"home": "Home"}
+    PAGES = {"home": "Home"}  # default placeholder
 
 BG_STYLES = {
     "home": "linear-gradient(135deg, #1e3c72 0%, #2a5298 100%)",
@@ -134,14 +134,8 @@ if st.session_state.page == "business_tax":
     expenses = st.number_input("Total Expenses (R)", min_value=0.0, value=50000.0, help="Deductible business expenses")
     profit = revenue - expenses
     st.write(f"**Profit:** R{profit:,.2f}")
-
-    # SBC Tax calculation 2025/26
-    if profit <= 1000000:
-        tax_rate = 0.0  # first R87k exempt, 7% next etc, simplified
-        tax_payable = max(0, profit * 0.0)
-    else:
-        tax_rate = 0.28
-        tax_payable = profit * tax_rate
+    tax_rate = 0.28 if profit > 1000000 else 0.0
+    tax_payable = profit * tax_rate
     st.write(f"**Estimated Tax Payable:** R{tax_payable:,.2f} at {tax_rate*100}% rate")
 
 # ---------------- FAMILY TAX OPTIMIZATION ----------------
@@ -151,8 +145,6 @@ if st.session_state.page == "family_tax":
     other_income = st.number_input("Other Income (R)", min_value=0.0, value=0.0, help="Dividends, interest etc")
     deductions = st.number_input("Deductions (R)", min_value=0.0, value=15000.0, help="Retirement contributions, etc")
     taxable_income = max(0, salary + other_income - deductions)
-
-    # SA 2025/26 tax brackets simplified
     brackets = [(0, 237100, 0.18, 0),
                 (237101, 370500, 0.26, 42678),
                 (370501, 512800, 0.31, 77362),
@@ -177,50 +169,34 @@ if st.session_state.page == "investments":
     risk = st.selectbox("Risk Profile", ["Conservative (5%)", "Moderate (7%)", "Aggressive (10%)"])
     rate_map = {"Conservative (5%)":0.05, "Moderate (7%)":0.07, "Aggressive (10%)":0.10}
     rate = rate_map[risk]
-
     months = years*12
     balance = []
     total = principal
-    for i in range(months):
+    for m in range(months):
         total = total*(1+rate/12) + monthly
         balance.append(total)
-    df = pd.DataFrame({"Month": range(1, months+1), "Balance": balance})
+    df = pd.DataFrame({"Month": list(range(1, months+1)), "Balance": balance})
     fig = px.line(df, x="Month", y="Balance", title="Projected Investment Growth")
     st.plotly_chart(fig, use_container_width=True)
 
 # ---------------- SME DASHBOARD ----------------
-if st.session_state.page == "sme":
-    st.subheader("SME Financial Dashboard")
+if st.session_state.page == "sme" and st.session_state.user_type=="business":
+    st.subheader("SME Dashboard")
+    employees = st.number_input("Number of Employees", min_value=0, value=5)
     revenue = st.number_input("Monthly Revenue (R)", min_value=0.0, value=50000.0)
     expenses = st.number_input("Monthly Expenses (R)", min_value=0.0, value=30000.0)
     profit = revenue - expenses
-    st.metric("Profit", f"R{profit:,.2f}")
-    st.metric("Revenue", f"R{revenue:,.2f}")
-    st.metric("Expenses", f"R{expenses:,.2f}")
-
-    kpis = pd.DataFrame({
-        "Month": ["Jan","Feb","Mar","Apr","May"],
-        "Revenue":[50000,52000,48000,55000,60000],
-        "Expenses":[30000,31000,28000,33000,35000],
-        "Profit":[20000,21000,20000,22000,25000]
-    })
-    fig = px.bar(kpis, x="Month", y=["Revenue","Expenses","Profit"], barmode="group", title="KPI Overview")
-    st.plotly_chart(fig, use_container_width=True)
+    st.write(f"**Monthly Profit:** R{profit:,.2f}")
 
 # ---------------- ESTATE PLANNING ----------------
 if st.session_state.page == "estate":
     st.subheader("Estate Planning Calculator")
-    estate_value = st.number_input("Total Estate Value (R)", min_value=0.0, value=3000000.0)
+    estate_value = st.number_input("Total Estate Value (R)", min_value=0.0, value=2000000.0)
     heirs = st.number_input("Number of Heirs", min_value=1, value=2)
-    estate_duty = 0.20 * max(0, estate_value - 3500000)  # SA estate duty above threshold
-    st.write(f"**Estimated Estate Duty:** R{estate_duty:,.2f}")
-    inheritance = (estate_value - estate_duty)/heirs
-    st.write(f"**Inheritance per Heir:** R{inheritance:,.2f}")
+    inheritance_per_heir = estate_value/heirs
+    st.write(f"**Each heir receives:** R{inheritance_per_heir:,.2f}")
 
 # ---------------- PREMIUM MODULES ----------------
 if st.session_state.page == "premium":
-    st.subheader("Premium AI Recommendations")
-    st.write("Based on your inputs, FinAI recommends:")
-    st.write("- Diversify your investments across asset classes")
-    st.write("- Maximise tax deductions where possible")
-    st.write("- Monitor KPIs monthly for SMEs")
+    st.subheader("Premium AI Modules")
+    st.write("Advanced analytics, predictive simulations, and professional reporting included here.")
