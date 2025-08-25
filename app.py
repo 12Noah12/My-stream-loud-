@@ -21,30 +21,19 @@ st.markdown(f"""
         background-size: cover;
         background-position: center;
     }}
-    input[type=text], input[type=number] {{
-        font-size: 1.2em;
-        padding: 0.5em;
-    }}
-    .submit-btn {{
-        background-color: #4CAF50;
-        color: white;
-        font-weight: bold;
-        padding: 0.6em 1.2em;
-        border: none;
-        border-radius: 5px;
-        cursor: pointer;
-        box-shadow: 0 0 10px #4CAF50;
-        transition: 0.3s;
-    }}
-    .submit-btn:hover {{
-        box-shadow: 0 0 20px #4CAF50;
-    }}
-    .user-btn {{
-        font-size: 1.2em;
-        color: black !important;
-    }}
     .privacy-text {{
         color: white;
+        font-size: 1em;
+        line-height: 1.5em;
+    }}
+    .selection-button {{
+        color: black;
+        font-size: 1.2em;
+        padding: 0.5em 1em;
+    }}
+    input[type=text] {{
+        font-size: 1.2em;
+        padding: 0.5em;
     }}
     </style>
 """, unsafe_allow_html=True)
@@ -58,48 +47,55 @@ if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
+if 'rerun_pending' not in st.session_state:
+    st.session_state.rerun_pending = False
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.markdown("<h1 class='privacy-text'>Privacy Agreement</h1>", unsafe_allow_html=True)
+    st.title("Privacy Agreement")
     st.markdown("""
-        <p class='privacy-text'>
-        Welcome to FinAI. All information you enter will be stored securely on encrypted servers. By clicking 'Accept', 
-        you acknowledge and agree that your data will be used solely for generating financial insights and reports. 
-        This agreement is legally binding. If you do not accept, you will not be able to access the platform.
-        </p>
+    <div class='privacy-text'>
+    Welcome to FinAI. Your privacy is paramount. All data you enter will be stored in a secure, encrypted network.  
+    By clicking 'Accept', you acknowledge that:
+    <ul>
+        <li>All information is used solely to generate personalized financial insights.</li>
+        <li>FinAI and associated entities are not responsible for financial decisions made based on these insights.</li>
+        <li>This is a legally binding agreement; refusing to accept will prevent access to the service.</li>
+    </ul>
+    </div>
     """, unsafe_allow_html=True)
+
     accept = st.checkbox("I accept the privacy agreement")
     if accept:
         st.session_state.privacy_accepted = True
     else:
-        st.warning("You must accept to continue.")
+        st.error("You must accept to continue.")
         st.stop()
 
 # ---------------- NAVBAR ----------------
 def show_navbar(pages):
     cols = st.columns(len(pages))
     for i, (key, label) in enumerate(pages.items()):
-        if cols[i].button(label, key=key, help=f"Go to {label}"):
+        if cols[i].button(label):
             st.session_state.page = key
 
 # ---------------- AI SEARCH ----------------
 def ai_search():
     st.subheader("Describe your financial situation or goals")
     query = st.text_input("", placeholder="Type anything about your finances, business, or household...")
-    if st.button("Submit", key="ai_submit"):
-        if query.strip() != "":
-            response = get_ai_redirect(query)
-            st.session_state.user_type = response
-            st.session_state.page = 'dashboard'
-            st.experimental_rerun()
+    if st.button("Submit") and query:
+        response = get_ai_redirect(query)
+        st.session_state.user_type = response
+        st.session_state.page = 'dashboard'
+        st.experimental_rerun()
 
 # ---------------- GPT BACKEND ----------------
 def get_ai_redirect(text):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
-        st.warning("OpenAI API key not found. Defaulting to Individual.")
+        st.warning("OpenAI API key not found, defaulting to Individual.")
         return 'individual'
+
     try:
         prompt = f"""
         Determine if this query is best for 'individual', 'household', or 'business' financial advice:
@@ -122,49 +118,52 @@ def get_ai_redirect(text):
 def select_user_type():
     st.subheader("Choose your category")
     col1, col2, col3 = st.columns(3)
-    if col1.button("Individual", key="btn_individual"):
+
+    if col1.button("Individual", key="btn_individual") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
+        st.session_state.rerun_pending = True
         st.experimental_rerun()
-    if col2.button("Household", key="btn_household"):
+
+    if col2.button("Household", key="btn_household") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
+        st.session_state.rerun_pending = True
         st.experimental_rerun()
-    if col3.button("Business", key="btn_business"):
+
+    if col3.button("Business", key="btn_business") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
+        st.session_state.rerun_pending = True
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
 def dashboard():
     st.title(f"{st.session_state.user_type.capitalize()} Dashboard")
     user_type = st.session_state.user_type
+
     inputs = {}
-
-    # Input fields with hover tooltips
     if user_type == 'individual':
-        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f", help="Your total income for the year")
-        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f", help="Any deductions you currently claim")
+        inputs['Income'] = st.number_input("Annual Income", min_value=0.0, format="%.2f")
+        inputs['Deductions'] = st.number_input("Annual Deductions", min_value=0.0, format="%.2f")
     elif user_type == 'household':
-        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f", help="Total household income")
-        inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1, help="Number of children in the household")
-        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f", help="Total deductions currently applied")
+        inputs['Household Income'] = st.number_input("Household Annual Income", min_value=0.0, format="%.2f")
+        inputs['Children'] = st.number_input("Number of Children", min_value=0, step=1)
+        inputs['Deductions'] = st.number_input("Total Household Deductions", min_value=0.0, format="%.2f")
     elif user_type == 'business':
-        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f", help="Total revenue for the business")
-        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f", help="Total business expenses")
-        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1, help="Number of employees in the business")
+        inputs['Revenue'] = st.number_input("Annual Revenue", min_value=0.0, format="%.2f")
+        inputs['Expenses'] = st.number_input("Annual Expenses", min_value=0.0, format="%.2f")
+        inputs['Employees'] = st.number_input("Number of Employees", min_value=0, step=1)
 
-    if st.button("Get Personalized Advice", key="get_advice"):
+    if st.button("Get Personalized Advice"):
         advice = generate_advice_gpt(user_type, inputs)
         st.info(advice)
 
-    if st.button("Download PDF Report", key="download_pdf"):
-        advice = generate_advice_gpt(user_type, inputs)
+    if st.button("Download PDF Report"):
         pdf_bytes = create_pdf(inputs, user_type, advice)
         st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
 
-    if st.button("Download Excel Report", key="download_excel"):
-        advice = generate_advice_gpt(user_type, inputs)
+    if st.button("Download Excel Report"):
         excel_bytes = create_excel(inputs, user_type, advice)
         st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
 
@@ -173,12 +172,13 @@ def generate_advice_gpt(user_type, inputs):
     openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
     if not openai.api_key:
         return "OpenAI API key not found. Cannot generate advice."
+
     try:
         input_text = "\n".join([f"{k}: {v}" for k,v in inputs.items()])
         prompt = f"""
         You are a professional financial advisor. Based on these user inputs:
         {input_text}
-        Provide actionable financial advice in 3-4 bullet points. Do NOT give full instructions; encourage contacting us.
+        Provide actionable financial advice in 3-4 bullet points. Do NOT give full implementation instructions; encourage user to contact us.
         """
         completion = openai.Completion.create(
             engine="text-davinci-003",
