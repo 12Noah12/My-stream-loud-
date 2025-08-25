@@ -1,7 +1,6 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from PIL import Image
 import xlsxwriter
 from reportlab.lib.pagesizes import letter
@@ -21,15 +20,10 @@ st.markdown(f"""
         background-size: cover;
         background-position: center;
     }}
-    .privacy-text {{
-        color: white;
-        font-size: 1em;
-        line-height: 1.5em;
-    }}
-    .selection-button {{
-        color: black;
-        font-size: 1.2em;
-        padding: 0.5em 1em;
+    .black-font button {{
+        color: black !important;
+        font-weight: bold !important;
+        font-size: 16px !important;
     }}
     input[type=text] {{
         font-size: 1.2em;
@@ -47,24 +41,18 @@ if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
-if 'rerun_pending' not in st.session_state:
-    st.session_state.rerun_pending = False
 
 # ---------------- PRIVACY AGREEMENT ----------------
 def privacy_agreement():
-    st.title("Privacy Agreement")
+    st.markdown("<h1 style='color:white'>Privacy Agreement</h1>", unsafe_allow_html=True)
     st.markdown("""
-    <div class='privacy-text'>
-    Welcome to FinAI. Your privacy is paramount. All data you enter will be stored in a secure, encrypted network.  
-    By clicking 'Accept', you acknowledge that:
-    <ul>
-        <li>All information is used solely to generate personalized financial insights.</li>
-        <li>FinAI and associated entities are not responsible for financial decisions made based on these insights.</li>
-        <li>This is a legally binding agreement; refusing to accept will prevent access to the service.</li>
-    </ul>
-    </div>
+        <p style='color:white'>
+        By entering your data, you consent to the storage and processing of this information securely. 
+        This information is used solely for providing personalized financial advice. 
+        By clicking 'Accept', you enter a legally binding agreement that your information will be used 
+        for advisory purposes only. If you do not accept, you cannot continue to the platform.
+        </p>
     """, unsafe_allow_html=True)
-
     accept = st.checkbox("I accept the privacy agreement")
     if accept:
         st.session_state.privacy_accepted = True
@@ -119,22 +107,26 @@ def select_user_type():
     st.subheader("Choose your category")
     col1, col2, col3 = st.columns(3)
 
+    if 'rerun_pending' not in st.session_state:
+        st.session_state.rerun_pending = False
+
     if col1.button("Individual", key="btn_individual") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
         st.session_state.rerun_pending = True
-        st.experimental_rerun()
 
     if col2.button("Household", key="btn_household") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
         st.session_state.rerun_pending = True
-        st.experimental_rerun()
 
     if col3.button("Business", key="btn_business") and not st.session_state.rerun_pending:
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
         st.session_state.rerun_pending = True
+
+    if st.session_state.rerun_pending:
+        st.session_state.rerun_pending = False
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
@@ -178,7 +170,7 @@ def generate_advice_gpt(user_type, inputs):
         prompt = f"""
         You are a professional financial advisor. Based on these user inputs:
         {input_text}
-        Provide actionable financial advice in 3-4 bullet points. Do NOT give full implementation instructions; encourage user to contact us.
+        Provide actionable financial advice in 3-4 bullet points. Do NOT give the full instructions; encourage the user to contact us to implement solutions.
         """
         completion = openai.Completion.create(
             engine="text-davinci-003",
@@ -236,3 +228,4 @@ if st.session_state.page == 'home':
     select_user_type()
 elif st.session_state.page == 'dashboard':
     dashboard()
+
