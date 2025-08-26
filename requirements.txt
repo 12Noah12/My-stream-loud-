@@ -12,3 +12,5 @@ reportlab
 fpdf
 openpyxl
 requests
+gspread
+google-auth
