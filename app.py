@@ -1,30 +1,54 @@
-# app.py - OptiFin (Full launch-ready Streamlit app)
-# Save as app.py and run: streamlit run app.py
+# app.py — OptiFin (full, launch-ready)
+# Run: streamlit run app.py
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.ticker import FuncFormatter
-import io
-import xlsxwriter
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-import textwrap
+from reportlab.lib.utils import ImageReader
+import xlsxwriter
 import datetime
-import openai
+import io
+import textwrap
 import math
-import requests  # optional for news (if NEWSAPI_KEY provided)
+import requests
+import json
+import openai
 
-# ---------------- CONFIG & BRAND ----------------
+# Optional Google Sheets (graceful fallback if secrets not present)
+GS_ENABLED = False
+try:
+    import gspread
+    from google.oauth2.service_account import Credentials
+    GS_ENABLED = True
+except Exception:
+    GS_ENABLED = False
+
+# ---------------- BRAND / CONFIG ----------------
 APP_TITLE = "OptiFin"
 TAGLINE = "Your Wealth, Optimized."
 LOGO_TEXT = "OPTIFIN"
-BG_GRADIENT = "linear-gradient(180deg, #f4f7fb 0%, #ffffff 100%)"
+
+# If you add a logo URL in secrets, PDFs/Excels use it
+# st.secrets["LOGO_URL"] = "https://your-cdn/logo.png"
+LOGO_URL = st.secrets.get("LOGO_URL", "")
+
+# Optional Google Sheets settings in secrets
+# st.secrets["GOOGLE_SHEETS_SERVICE_ACCOUNT"] = {...service account json...}
+# st.secrets["GOOGLE_SHEET_ID"] = "1xxxxx..."
+GS_SA = st.secrets.get("GOOGLE_SHEETS_SERVICE_ACCOUNT", None)
+GS_SHEET_ID = st.secrets.get("GOOGLE_SHEET_ID", None)
+
+# Optional OpenAI
+OPENAI_KEY = st.secrets.get("OPENAI_API_KEY", "")
 
 st.set_page_config(page_title=APP_TITLE, page_icon="💼", layout="wide")
 
-# ---------------- CSS for readability (overlay cards) ----------------
+# ---------------- THEME / CSS ----------------
+BG_GRADIENT = "linear-gradient(180deg, #eef3f9 0%, #ffffff 100%)"
 st.markdown(
     f"""
     <style>
@@ -33,22 +57,33 @@ st.markdown(
     }}
     .content-card {{
         background: rgba(255,255,255,0.98);
-        padding: 18px;
-        border-radius: 10px;
-        box-shadow: 0 6px 18px rgba(20,20,40,0.06);
+        padding: 18px 18px 10px 18px;
+        border-radius: 12px;
+        box-shadow: 0 8px 22px rgba(20,20,40,0.08);
     }}
-    .muted {{ color: #666; font-size:0.95rem; }}
-    .brand-title {{ font-size:20px; font-weight:800; color:#08304d; }}
-    .brand-sub {{ color:#08304d; font-size:0.95rem; }}
+    .brand-title {{ font-weight:800; color:#08283f; letter-spacing:1px; }}
+    .brand-sub {{ color:#08283f; opacity:0.8; }}
+    .muted {{ color:#5b6b7a; font-size:0.95rem; }}
     .insight-card {{
-        background: linear-gradient(180deg,#ffffff,#fbfbff);
+        background: linear-gradient(180deg,#ffffff,#f7f9ff);
         border-left: 4px solid #0b5fff;
         padding: 12px;
-        border-radius: 8px;
+        border-radius: 10px;
     }}
     .small-note {{ font-size:0.9rem; color:#444; }}
-    .btn-primary>button {{ background-color: #08304d; color: white; border-radius: 8px; font-weight:700; padding:8px 12px; }}
-    .download-btn>button {{ background-color: #caa84a; color: #111; border-radius: 8px; font-weight:700; padding:8px 12px; }}
+    .btn-dark > button {{ background:#08283f; color:#fff; border-radius:10px; font-weight:700; padding:8px 14px; }}
+    .btn-gold > button {{ background:#caa84a; color:#111; border-radius:10px; font-weight:700; padding:8px 14px; }}
+    .pill {{
+        display:inline-block; padding:6px 10px; border-radius:999px; background:#eff3fb; color:#08283f; font-size:0.85rem; margin-right:6px;
+    }}
+    .kpi {{
+        background:#0b5fff10; border:1px solid #0b5fff30; border-radius:10px; padding:10px; text-align:center;
+    }}
+    .kpi h4 {{ margin:2px 0 0 0; color:#08283f }}
+    .kpi small {{ color:#4d5b6a }}
+    .cta {{
+        background:#08283f; color:#fff; padding:10px 14px; border-radius:10px; font-weight:700;
+    }}
     input[type="text"], textarea, input[type="number"] {{ font-size: 1rem; }}
     </style>
     """,
@@ -56,485 +91,478 @@ st.markdown(
 )
 
 # ---------------- SESSION STATE ----------------
-if "page" not in st.session_state:
-    st.session_state.page = "privacy"
-if "privacy_accepted" not in st.session_state:
-    st.session_state.privacy_accepted = False
-if "user_type" not in st.session_state:
-    st.session_state.user_type = None
-if "service_choice" not in st.session_state:
-    st.session_state.service_choice = None
-if "inputs_individual" not in st.session_state:
-    st.session_state.inputs_individual = {}
-if "inputs_household" not in st.session_state:
-    st.session_state.inputs_household = {}
-if "inputs_business" not in st.session_state:
-    st.session_state.inputs_business = {}
-if "advice_text" not in st.session_state:
-    st.session_state.advice_text = ""
-if "lead" not in st.session_state:
-    st.session_state.lead = {}
-if "market_context" not in st.session_state:
-    # default embedded market snapshot
-    st.session_state.market_context = (
-        "Market snapshot: central banks showing moderate easing expectations; "
-        "favor diversified, low-cost exposures and maintain liquidity buffer."
+ss = st.session_state
+if "page" not in ss: ss.page = "privacy"
+if "privacy_accepted" not in ss: ss.privacy_accepted = False
+if "user_type" not in ss: ss.user_type = None
+if "service_choice" not in ss: ss.service_choice = None
+if "inputs_individual" not in ss: ss.inputs_individual = {}
+if "inputs_household" not in ss: ss.inputs_household = {}
+if "inputs_business" not in ss: ss.inputs_business = {}
+if "advice_text" not in ss: ss.advice_text = ""
+if "lead" not in ss: ss.lead = {}
+if "market_context" not in ss:
+    ss.market_context = (
+        "Macro: Gradual disinflation with rate-cut bias; maintain liquidity buffer; "
+        "diversify across equities, quality bonds, and real assets."
     )
 
-# ---------------- UTIL: numeric parsing ----------------
+# ---------------- UTIL ----------------
 def parse_num(s):
-    if s is None:
-        return 0.0
-    if isinstance(s, (int, float)):
-        return float(s)
-    s2 = str(s).strip()
-    if s2 == "":
-        return 0.0
+    if s is None: return 0.0
+    if isinstance(s, (int,float)): return float(s)
+    s = str(s).strip()
+    if s == "": return 0.0
     try:
-        # remove common currency chars and commas
-        cleaned = s2.replace(",", "").replace("R", "").replace("ZAR", "").replace("$", "").strip()
-        return float(cleaned)
+        s = s.replace(",", "").replace("R", "").replace("ZAR", "").replace("$", "").strip()
+        return float(s)
     except Exception:
         return 0.0
 
-# ---------------- UTIL: OpenAI ----------------
 def openai_available():
-    return bool(st.secrets.get("OPENAI_API_KEY", ""))
+    return bool(OPENAI_KEY)
 
-def call_openai(prompt, max_tokens=400, temp=0.2):
-    key = st.secrets.get("OPENAI_API_KEY", "")
-    if not key:
-        raise RuntimeError("OpenAI API key not set in st.secrets")
-    openai.api_key = key
-    resp = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=max_tokens, temperature=temp)
+def call_openai(prompt, max_tokens=400, temperature=0.15):
+    if not OPENAI_KEY:
+        raise RuntimeError("OpenAI key missing")
+    openai.api_key = OPENAI_KEY
+    resp = openai.Completion.create(
+        engine="text-davinci-003",
+        prompt=prompt,
+        max_tokens=max_tokens,
+        temperature=temperature,
+    )
     return resp.choices[0].text.strip()
 
-# ---------------- PRIVACY PAGE ----------------
+# ---------------- GOOGLE SHEETS (optional) ----------------
+def gs_client():
+    if not GS_ENABLED or not GS_SA or not GS_SHEET_ID:
+        return None
+    try:
+        if isinstance(GS_SA, str):
+            cred_info = json.loads(GS_SA)
+        else:
+            cred_info = dict(GS_SA)
+        scopes = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds = Credentials.from_service_account_info(cred_info, scopes=scopes)
+        gc = gspread.authorize(creds)
+        return gc
+    except Exception:
+        return None
+
+def append_lead_to_gsheet(lead_dict):
+    gc = gs_client()
+    if not gc: return False, "Google Sheets not configured"
+    try:
+        sh = gc.open_by_key(GS_SHEET_ID)
+        ws = sh.sheet1
+        row = [
+            datetime.datetime.now().isoformat(),
+            lead_dict.get("name",""),
+            lead_dict.get("email",""),
+            lead_dict.get("phone",""),
+            lead_dict.get("user_type",""),
+            lead_dict.get("service",""),
+            lead_dict.get("notes",""),
+        ]
+        ws.append_row(row, value_input_option="USER_ENTERED")
+        return True, "Saved to Google Sheets"
+    except Exception as e:
+        return False, f"Sheets error: {e}"
+
+# ---------------- PRIVACY ----------------
 def page_privacy():
     st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-    st.markdown(f"<div style='display:flex; gap:12px; align-items:center'><div class='brand-title'>{LOGO_TEXT}</div><div class='brand-sub'>{APP_TITLE} — {TAGLINE}</div></div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='brand-title' style='font-size:22px'>{LOGO_TEXT}</div>", unsafe_allow_html=True)
+    st.markdown(f"<div class='brand-sub'>{APP_TITLE} — {TAGLINE}</div>", unsafe_allow_html=True)
     st.markdown("---")
-    st.markdown("<h3>Privacy & Data Agreement</h3>", unsafe_allow_html=True)
+    st.markdown("### Privacy & Data Agreement")
     st.markdown(
         """
-        <div class="small-note">
-        <p>To use OptiFin you must accept our Privacy & Data Agreement. Please read carefully:</p>
-        <ul>
-            <li>Your inputs are stored securely and used to generate personalized financial recommendations and reports.</li>
-            <li>OptiFin will not sell your personal data. Aggregated anonymised data may be used to improve services.</li>
-            <li>Advice on this platform is informational and does not substitute professional implementation. OptiFin is not liable for outcomes from implementation unless contractually agreed.</li>
-            <li>Clicking "Accept & Continue" is a legal acknowledgement of this agreement.</li>
-        </ul>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    accepted = st.checkbox("I have read and ACCEPT the Privacy & Data Agreement", key="privacy_chk")
+        **Please read carefully before continuing.**  
+        By using OptiFin, you acknowledge and agree that:
+
+        - Your inputs are stored securely and used to generate personalized recommendations and reports.  
+        - We do not sell your personal information. Aggregated, anonymized data may be used to improve our models and services.  
+        - Advice provided here is high-level and educational. It does not constitute tax, legal, or investment advice. Implementation requires a separate signed engagement.  
+        - We take commercially reasonable measures to protect your data, but no system is perfectly secure.  
+        - By clicking **Accept & Continue**, you enter a legally binding agreement to these terms.
+        """)
+    accepted = st.checkbox("I ACCEPT the Privacy & Data Agreement", key="privacy_accept_chk")
     c1, c2 = st.columns([1,1])
     with c1:
-        if st.button("Accept & Continue", key="privacy_accept_btn"):
+        if st.button("Accept & Continue", key="privacy_go_btn"):
             if accepted:
-                st.session_state.privacy_accepted = True
-                # optionally fetch live market headlines if API Key present
-                if st.secrets.get("NEWSAPI_KEY", ""):
-                    try:
-                        headers = {"Authorization": st.secrets.get("NEWSAPI_KEY")}
-                        # simple headlines fetch - not necessary; skip if fails
-                        r = requests.get("https://newsapi.org/v2/top-headlines?q=markets&language=en&pageSize=3", headers=headers, timeout=5)
-                        if r.status_code == 200:
-                            data = r.json()
-                            articles = data.get("articles", [])[:3]
-                            headlines = " | ".join([a.get("title","") for a in articles])
-                            st.session_state.market_context = "Live headlines: " + headlines
-                    except Exception:
-                        pass
-                st.session_state.page = "home"
+                ss.privacy_accepted = True
+                ss.page = "home"
                 st.rerun()
             else:
-                st.warning("Please check the box to accept before continuing.")
+                st.warning("Please tick the checkbox to accept before continuing.")
     with c2:
         if st.button("Decline & Exit", key="privacy_decline_btn"):
             st.stop()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- HOME PAGE ----------------
-def page_home():
-    st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-    st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center'><div><div class='brand-title'>{LOGO_TEXT}</div><div class='brand-sub'>{APP_TITLE} — {TAGLINE}</div></div><div class='small-note'>Built for clarity & privacy</div></div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("<h3>How can OptiFin help you today?</h3>", unsafe_allow_html=True)
-    st.markdown("<div class='small-note'>Describe your situation in plain English or choose a category below.</div>", unsafe_allow_html=True)
-
-    # NLP query input
-    q = st.text_input("Ask OptiFin in plain English (optional):", placeholder="e.g., 'I earn R420k/year and have R30k deductions' ", key="home_query")
-    ccol = st.columns([1,1,1])
-    if ccol[0].button("Detect & Route", key="home_detect_btn"):
-        detected = detect_user_type(q)
-        st.session_state.user_type = detected
-        st.session_state.page = "service"
-        st.rerun()
-
-    # manual category buttons (unique keys)
-    c1, c2, c3 = st.columns([1,1,1])
-    with c1:
-        if st.button("Individual", key="home_ind_btn"):
-            st.session_state.user_type = "individual"; st.session_state.page = "service"; st.rerun()
-    with c2:
-        if st.button("Household", key="home_hh_btn"):
-            st.session_state.user_type = "household"; st.session_state.page = "service"; st.rerun()
-    with c3:
-        if st.button("Business", key="home_bus_btn"):
-            st.session_state.user_type = "business"; st.session_state.page = "service"; st.rerun()
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------- DETECTION (NLP) ----------------
+# ---------------- HOME ----------------
 def detect_user_type(text):
-    text_l = (text or "").lower()
-    if text_l.strip() == "":
-        return "individual"
-    # try OpenAI classification if available
+    t = (text or "").lower()
+    if t.strip() == "": return "individual"
+    # Try OpenAI classification first
     if openai_available():
         try:
-            prompt = f"Classify this query into one of: individual, household, business. Query: {text}\nReturn exactly one word."
-            out = call_openai(prompt, max_tokens=6, temp=0.0)
-            out = out.strip().lower()
-            if out in ("individual", "household", "business"):
+            out = call_openai(
+                f"Classify this into one of: individual, household, business.\nQuery: {text}\nReturn one word.",
+                max_tokens=6,
+                temperature=0.0
+            ).strip().lower()
+            if out in ("individual","household","business"):
                 return out
         except Exception:
             pass
-    # fallback rule-based
-    if any(k in text_l for k in ["business", "company", "employees", "revenue", "profit", "expenses"]):
+    # Fallback rules
+    if any(k in t for k in ["business","company","employees","revenue","invoice","corp","pty"]):
         return "business"
-    if any(k in text_l for k in ["household", "family", "kids", "children", "home", "spouse", "partner"]):
+    if any(k in t for k in ["household","family","kids","children","spouse","partner","home"]):
         return "household"
     return "individual"
 
-# ---------------- SERVICE SELECTION PAGE ----------------
+def page_home():
+    st.markdown("<div class='content-card'>", unsafe_allow_html=True)
+    st.markdown(f"<div style='display:flex; justify-content:space-between; align-items:center'><div><div class='brand-title' style='font-size:22px'>{LOGO_TEXT}</div><div class='brand-sub'>{APP_TITLE} — {TAGLINE}</div></div><div><span class='pill'>Private</span><span class='pill'>No spam</span></div></div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### How can we help you today?")
+    st.markdown("<div class='muted'>Describe your situation in your own words or choose a category.</div>", unsafe_allow_html=True)
+    col = st.columns([3,1,1,1])
+    with col[0]:
+        query = st.text_input("Ask OptiFin in plain English (optional):", key="home_query", placeholder="e.g., I earn R420k/year, maxing TFSA, need business tax help")
+    with col[1]:
+        if st.button("Detect & Route", key="home_detect_btn"):
+            ss.user_type = detect_user_type(query)
+            ss.page = "service"
+            st.rerun()
+    with col[2]:
+        if st.button("Clear", key="home_clear_btn"):
+            ss.home_query = ""
+            st.experimental_set_query_params()  # harmless no-op
+    with col[3]:
+        st.markdown("<div class='muted' style='padding-top:8px'>or choose below →</div>", unsafe_allow_html=True)
+
+    b = st.columns(3)
+    if b[0].button("Individual", key="home_ind_btn"): ss.user_type="individual"; ss.page="service"; st.rerun()
+    if b[1].button("Household", key="home_hh_btn"): ss.user_type="household"; ss.page="service"; st.rerun()
+    if b[2].button("Business", key="home_bus_btn"): ss.user_type="business"; ss.page="service"; st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------- SERVICE ----------------
 def page_service():
     st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-    st.title(f"{st.session_state.user_type.capitalize()} — Choose a Service")
-    st.markdown("<div class='small-note'>Pick the objective so we can ask targeted questions.</div>", unsafe_allow_html=True)
-    service = st.selectbox("What would you like to do?", options=["Invest", "Tax Optimization", "Cashflow & Budget", "Full Growth Plan"], index=0, key="service_select")
-    if st.button("Continue to Questions", key="service_continue_btn"):
-        st.session_state.service_choice = service
-        st.session_state.page = "questions"
+    st.markdown(f"### {ss.user_type.capitalize()} — Choose a Service")
+    svc = st.selectbox(
+        "What would you like to do?",
+        options=["Invest","Tax Optimization","Cashflow & Budget","Full Growth Plan"],
+        index=0, key="svc_select"
+    )
+    if st.button("Continue", key="svc_continue_btn"):
+        ss.service_choice = svc
+        ss.page = "questions"
         st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
-# ---------------- QUESTIONS PAGE (deeper plan inputs) ----------------
+# ---------------- QUESTIONS ----------------
 def page_questions():
-    ut = st.session_state.user_type
-    svc = st.session_state.service_choice or "Invest"
+    ut = ss.user_type
+    svc = ss.service_choice or "Invest"
     st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-    st.title(f"{ut.capitalize()} — {svc} Questions")
-    st.subheader("Contact (used on your report)")
-    name = st.text_input("Full name", key="q_name", value=st.session_state.lead.get("name",""))
-    email = st.text_input("Email", key="q_email", value=st.session_state.lead.get("email",""))
-    phone = st.text_input("Phone (optional)", key="q_phone", value=st.session_state.lead.get("phone",""))
+    st.markdown(f"### {ut.capitalize()} — {svc} Questions")
+
+    st.subheader("Contact")
+    name = st.text_input("Full name", key="q_name", value=ss.lead.get("name",""))
+    email = st.text_input("Email", key="q_email", value=ss.lead.get("email",""))
+    phone = st.text_input("Phone (optional)", key="q_phone", value=ss.lead.get("phone",""))
+
     st.markdown("---")
-
-    # Individual form
     if ut == "individual":
-        st.subheader("Individual Financial Details (type numbers, no +/- spinners)")
-        income_s = st.text_input("Annual Gross Income (R)", key="ind_income", value=str(st.session_state.inputs_individual.get("Income","")))
-        expenses_s = st.text_input("Annual Expenses (R)", key="ind_expenses", value=str(st.session_state.inputs_individual.get("Expenses","")))
-        investable_s = st.text_input("Current investable assets (R)", key="ind_investable", value=str(st.session_state.inputs_individual.get("Investable","")))
-        retirement_age = st.selectbox("Planned retirement age", options=[55,60,65,70], index=1, key="ind_ret_age")
-        risk = st.selectbox("Risk tolerance", options=["Low","Moderate","High"], index=1, key="ind_risk")
-        dependents = st.number_input("Number of dependents", min_value=0, step=1, key="ind_dependents", value=int(st.session_state.inputs_individual.get("Dependents",0) or 0))
-        notes = st.text_area("Notes (monthly vs annual etc.)", key="ind_notes", value=st.session_state.inputs_individual.get("Notes",""))
+        st.subheader("Individual Financial Details (type numbers; no +/- spinners)")
+        income = st.text_input("Annual Gross Income (R)", key="ind_income", value=str(ss.inputs_individual.get("Income","")))
+        expenses = st.text_input("Annual Expenses (R)", key="ind_expenses", value=str(ss.inputs_individual.get("Expenses","")))
+        investable = st.text_input("Current investable assets (R)", key="ind_investable", value=str(ss.inputs_individual.get("Investable","")))
+        monthly_contrib = st.text_input("Monthly investable contribution (R)", key="ind_monthly", value=str(ss.inputs_individual.get("Monthly Contrib","")))
+        risk = st.selectbox("Risk tolerance", ["Low","Moderate","High"], index=1, key="ind_risk")
+        retire_age = st.selectbox("Target retirement age", [55,60,65,70], index=2, key="ind_ret_age")
+        dependents = st.number_input("Dependents", min_value=0, step=1, value=int(ss.inputs_individual.get("Dependents",0) or 0), key="ind_deps")
+        notes = st.text_area("Notes (monthly vs annual, existing deductions, etc.)", key="ind_notes", value=ss.inputs_individual.get("Notes",""))
 
-        st.session_state.inputs_individual = {
-            "Income": income_s,
-            "Expenses": expenses_s,
-            "Investable": investable_s,
-            "Retirement Age": retirement_age,
+        ss.inputs_individual = {
+            "Income": income,
+            "Expenses": expenses,
+            "Investable": investable,
+            "Monthly Contrib": monthly_contrib,
             "Risk": risk,
+            "Retirement Age": retire_age,
             "Dependents": int(dependents),
             "Notes": notes
         }
 
-    # Household form
     elif ut == "household":
         st.subheader("Household Financial Details")
-        hh_income_s = st.text_input("Household Annual Income (R)", key="hh_income", value=str(st.session_state.inputs_household.get("Household Income","")))
-        children = st.number_input("Number of children", min_value=0, step=1, key="hh_children", value=int(st.session_state.inputs_household.get("Children",0) or 0))
-        hh_deductions_s = st.text_input("Total Household Deductions (R)", key="hh_deductions", value=str(st.session_state.inputs_household.get("Deductions","")))
-        education_s = st.text_input("Annual education/childcare costs (R)", key="hh_edu", value=str(st.session_state.inputs_household.get("Education","")))
-        housing_s = st.text_input("Annual mortgage/rent (R)", key="hh_housing", value=str(st.session_state.inputs_household.get("Housing","")))
-        risk = st.selectbox("Risk tolerance", options=["Low","Moderate","High"], index=1, key="hh_risk")
-        notes = st.text_area("Notes", key="hh_notes", value=st.session_state.inputs_household.get("Notes",""))
+        hh_income = st.text_input("Household Annual Income (R)", key="hh_income", value=str(ss.inputs_household.get("Household Income","")))
+        hh_deductions = st.text_input("Total Household Deductions (R)", key="hh_deductions", value=str(ss.inputs_household.get("Deductions","")))
+        children = st.number_input("Children", min_value=0, step=1, value=int(ss.inputs_household.get("Children",0) or 0), key="hh_children")
+        edu = st.text_input("Annual education/childcare costs (R)", key="hh_edu", value=str(ss.inputs_household.get("Education","")))
+        housing = st.text_input("Annual mortgage/rent (R)", key="hh_housing", value=str(ss.inputs_household.get("Housing","")))
+        monthly_surplus = st.text_input("Monthly investable surplus (R)", key="hh_surplus", value=str(ss.inputs_household.get("Monthly Surplus","")))
+        risk = st.selectbox("Risk tolerance", ["Low","Moderate","High"], index=1, key="hh_risk")
+        notes = st.text_area("Notes (what you already claim; monthly vs annual)", key="hh_notes", value=ss.inputs_household.get("Notes",""))
 
-        st.session_state.inputs_household = {
-            "Household Income": hh_income_s,
+        ss.inputs_household = {
+            "Household Income": hh_income,
+            "Deductions": hh_deductions,
             "Children": int(children),
-            "Deductions": hh_deductions_s,
-            "Education": education_s,
-            "Housing": housing_s,
+            "Education": edu,
+            "Housing": housing,
+            "Monthly Surplus": monthly_surplus,
             "Risk": risk,
             "Notes": notes
         }
 
-    # Business form
     else:
         st.subheader("Business Financial Details")
-        revenue_s = st.text_input("Annual Revenue (R)", key="bus_revenue", value=str(st.session_state.inputs_business.get("Revenue","")))
-        expenses_s = st.text_input("Annual Expenses (R)", key="bus_expenses", value=str(st.session_state.inputs_business.get("Expenses","")))
-        employees = st.number_input("Number of employees", min_value=0, step=1, key="bus_employees", value=int(st.session_state.inputs_business.get("Employees",0) or 0))
-        business_type = st.selectbox("Business Type", options=["Sole Proprietorship","Private Company","Partnership","Other"], index=1, key="bus_type")
-        owner_draw_s = st.text_input("Owner remuneration last 12 months (R)", key="bus_owner_draw", value=str(st.session_state.inputs_business.get("Owner Draw","")))
-        tax_paid_s = st.text_input("Tax paid last year (R)", key="bus_tax_paid", value=str(st.session_state.inputs_business.get("Tax Paid","")))
-        notes = st.text_area("Notes", key="bus_notes", value=st.session_state.inputs_business.get("Notes",""))
+        revenue = st.text_input("Annual Revenue (R)", key="bus_rev", value=str(ss.inputs_business.get("Revenue","")))
+        expenses = st.text_input("Annual Expenses (R)", key="bus_exp", value=str(ss.inputs_business.get("Expenses","")))
+        employees = st.number_input("Employees", min_value=0, step=1, value=int(ss.inputs_business.get("Employees",0) or 0), key="bus_emps")
+        bus_type = st.selectbox("Business Type", ["Sole Proprietorship","Private Company","Partnership","Other"], index=1, key="bus_type")
+        owner_draw = st.text_input("Owner remuneration last 12 months (R)", key="bus_draw", value=str(ss.inputs_business.get("Owner Draw","")))
+        tax_paid = st.text_input("Tax paid last year (R)", key="bus_tax_paid", value=str(ss.inputs_business.get("Tax Paid","")))
+        monthly_capex = st.text_input("Average monthly capex (R)", key="bus_capex", value=str(ss.inputs_business.get("Monthly Capex","")))
+        notes = st.text_area("Notes (existing deductions, assets, structures)", key="bus_notes", value=ss.inputs_business.get("Notes",""))
 
-        st.session_state.inputs_business = {
-            "Revenue": revenue_s,
-            "Expenses": expenses_s,
+        ss.inputs_business = {
+            "Revenue": revenue,
+            "Expenses": expenses,
             "Employees": int(employees),
-            "Business Type": business_type,
-            "Owner Draw": owner_draw_s,
-            "Tax Paid": tax_paid_s,
+            "Business Type": bus_type,
+            "Owner Draw": owner_draw,
+            "Tax Paid": tax_paid,
+            "Monthly Capex": monthly_capex,
             "Notes": notes
         }
 
-    # persist lead basic info
-    st.session_state.lead.update({"name": name, "email": email, "phone": phone})
+    ss.lead.update({"name": name, "email": email, "phone": phone})
 
     st.markdown("---")
     c1, c2 = st.columns([1,1])
-    with c1:
-        if st.button("Generate Advice & View Results", key="questions_generate_btn"):
-            st.session_state.page = "results"
-            st.rerun()
-    with c2:
-        if st.button("Save & Continue to Results (no advice)", key="questions_save_btn"):
-            st.session_state.page = "results"
-            st.rerun()
+    if c1.button("Generate Advice & View Results", key="q_generate"):
+        ss.page = "results"; st.rerun()
+    if c2.button("Save & View Results", key="q_save"):
+        ss.page = "results"; st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
 
 # ---------------- ADVICE ENGINE ----------------
-def generate_advice(user_type, inputs_raw, service):
-    # Clean and convert inputs
-    cleaned = {}
-    for k, v in inputs_raw.items():
-        if isinstance(v, (int, float)):
-            cleaned[k] = v
-        else:
-            cleaned[k] = parse_num(v) if isinstance(v, str) else v
-
-    # Build prompt if OpenAI available
-    prompt = f"Market context: {st.session_state.market_context}\nUser type: {user_type}\nService: {service}\nUser inputs:\n"
-    for k, v in cleaned.items():
-        prompt += f"- {k}: {v}\n"
-    prompt += (
-        "\nYou are a careful professional financial advisor. Provide 4 concise recommendations "
-        "and end with a call-to-action to contact OptiFin for implementation. Do not provide legal filing steps."
-    )
-
-    if openai_available():
-        try:
-            out = call_openai(prompt, max_tokens=400, temp=0.15)
-            return out
-        except Exception:
-            pass
-
-    # deterministic fallback
-    return deterministic_advice(user_type, cleaned, service)
-
 def deterministic_advice(user_type, data, service):
-    def money(x):
-        try:
-            return f"R {float(x):,.0f}"
-        except Exception:
-            return str(x)
     adv = []
+    def m(x):
+        try: return f"R {float(x):,.0f}"
+        except: return str(x)
     if user_type == "individual":
-        income = float(data.get("Income",0) or 0)
-        adv.append("Prioritise tax-efficient savings: retirement or tax-free accounts to reduce taxable income.")
-        adv.append("Use a low-cost diversified ETF allocation and rebalance annually; avoid concentrated bets.")
-        adv.append("Build a 3–6 month emergency fund before pursuing higher-risk investments.")
-        adv.append("Contact OptiFin for a detailed tax-credit audit and step-by-step implementation.")
+        income = parse_num(data.get("Income",0))
+        investable = parse_num(data.get("Investable",0))
+        monthly = parse_num(data.get("Monthly Contrib",0))
+        adv.append("Maximise tax-efficient wrappers first (retirement annuity / pension / TFSA) before taxable accounts.")
+        adv.append("Use low-cost diversified ETFs; set quarterly contributions on autopilot and rebalance annually.")
+        adv.append("Maintain an emergency fund of 3–6 months’ expenses; avoid high-interest debt before adding risk.")
+        adv.append("We can model exact tax savings and automate contributions — contact OptiFin to implement.")
     elif user_type == "household":
-        adv.append("Maintain an emergency fund and use tax-efficient saving vehicles for education and retirement.")
-        adv.append("Explore child-related tax credits and education savings plans if you have dependents.")
-        adv.append("Balance long-term growth assets with inflation-protected instruments.")
-        adv.append("Contact OptiFin for a household tax & investment audit and modeled savings estimates.")
+        kids = int(data.get("Children",0) or 0)
+        deductions = parse_num(data.get("Deductions",0))
+        adv.append("Audit household deductions (medical, retirement, education) and allocate to the higher-bracket spouse.")
+        adv.append(f"Explore child-linked credits and education savings plans; with {kids} dependents these can be material.")
+        adv.append("Balance growth assets with inflation-linked bonds; automate sinking funds for school and housing.")
+        adv.append("Contact OptiFin for a household tax & investment blueprint with quantified savings.")
     else:
-        adv.append("Ensure robust bookkeeping and a dedicated business card to capture deductions accurately.")
-        adv.append("Review owner remuneration (salary vs dividends) and company retirement schemes for tax efficiency.")
-        adv.append("Automate expense categorisation to avoid missed deductions.")
-        adv.append("Contact OptiFin's corporate team for a modeled optimization and estimated tax savings.")
+        revenue = parse_num(data.get("Revenue",0)); expenses = parse_num(data.get("Expenses",0))
+        adv.append("Use a dedicated business card & expense policy; standardise categories to avoid missed deductions.")
+        adv.append("Optimise owner remuneration (salary vs distributions) and company retirement schemes for tax efficiency.")
+        adv.append("Capex scheduling & depreciation planning can smooth cash taxes; review asset write-off rules.")
+        adv.append("OptiFin can quantify savings and implement accounting automations. Reach out to start.")
     return "\n\n".join(adv)
 
-# ---------------- RESULTS PAGE ----------------
-def page_results():
-    ut = st.session_state.user_type
-    svc = st.session_state.service_choice or "Invest"
+def generate_advice(user_type, inputs_raw, service):
+    # numeric-cleaned dict (but keep strings where needed)
+    cleaned = {k: (parse_num(v) if isinstance(v, str) else v) for k,v in inputs_raw.items()}
+    prompt = (
+        f"Market: {ss.market_context}\nUser type: {user_type}\nService: {service}\n"
+        "User inputs:\n" + "\n".join([f"- {k}: {v}" for k,v in cleaned.items()]) +
+        "\nProvide 4 actionable, high-level recommendations tailored to this case. "
+        "Do not give step-by-step filing instructions. End with a call-to-action to contact OptiFin for implementation."
+    )
+    if openai_available():
+        try:
+            return call_openai(prompt, max_tokens=420, temperature=0.2)
+        except Exception:
+            pass
+    return deterministic_advice(user_type, cleaned, service)
 
-    st.markdown("<div class='content-card'>", unsafe_allow_html=True)
-    st.title(f"{ut.capitalize()} — Results")
-
-    # select inputs
-    if ut == "individual":
-        raw_inputs = st.session_state.inputs_individual
-    elif ut == "household":
-        raw_inputs = st.session_state.inputs_household
+# ---------------- PROJECTIONS (multi-scenario) ----------------
+def scenario_growth(initial, monthly, years, rate):
+    """Future value with monthly contributions, compounded monthly."""
+    n = years * 12
+    r = rate / 12.0
+    fv = initial * ((1+r)**n)
+    if r == 0:
+        fv += monthly * n
     else:
-        raw_inputs = st.session_state.inputs_business
+        fv += monthly * (((1+r)**n - 1) / r)
+    return fv
 
-    # cleaned numeric map for charts
-    numeric_map = {}
-    for k, v in raw_inputs.items():
-        numeric_map[k] = parse_num(v) if not isinstance(v, (int, float)) else v
+def build_scenarios(user_type, raw_inputs):
+    # Defaults
+    if user_type == "individual":
+        initial = parse_num(raw_inputs.get("Investable",0))
+        monthly = parse_num(raw_inputs.get("Monthly Contrib",0))
+        years = 10
+        risk = (raw_inputs.get("Risk","Moderate") or "Moderate").lower()
+    elif user_type == "household":
+        initial = parse_num(raw_inputs.get("Monthly Surplus",0)) * 6  # assume a small starting buffer
+        monthly = parse_num(raw_inputs.get("Monthly Surplus",0))
+        years = 10
+        risk = (raw_inputs.get("Risk","Moderate") or "Moderate").lower()
+    else:
+        # business: treat capex savings invested
+        initial = max(0.0, parse_num(raw_inputs.get("Revenue",0)) - parse_num(raw_inputs.get("Expenses",0))) * 0.1
+        monthly = parse_num(raw_inputs.get("Monthly Capex",0)) * 0.1
+        years = 7
+        risk = "moderate"
 
-    # generate advice if not already
-    if not st.session_state.advice_text:
-        st.session_state.advice_text = generate_advice(ut, raw_inputs, svc)
+    # risk anchor baseline
+    if risk == "low":
+        base = 0.05
+    elif risk == "high":
+        base = 0.10
+    else:
+        base = 0.075
 
-    # layout: chart (left) + insight card (right)
-    left, right = st.columns([2,1])
-    with left:
-        st.subheader("Compact Financial Trend")
-        labels = list(numeric_map.keys())
-        values = [numeric_map[k] for k in labels]
-        # limit labels to 6
-        if len(labels) > 6:
-            labels = labels[:6]
-            values = values[:6]
-        fig, ax = plt.subplots(figsize=(5,2.2))
-        x = np.arange(len(labels))
-        ax.plot(x, values, marker='o', linewidth=1.5, color="#08304d")
-        ax.set_xticks(x)
-        ax.set_xticklabels(labels, rotation=20, fontsize=9)
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"R {v:,.0f}"))
-        ax.grid(axis='y', linestyle='--', linewidth=0.4, alpha=0.6)
-        plt.tight_layout()
-        st.pyplot(fig, clear_figure=True)
+    rates = {
+        "Conservative": base - 0.02,
+        "Baseline": base,
+        "Aggressive": base + 0.02,
+    }
+    # monthly series for chart
+    months = list(range(0, years*12+1, max(1, (years*12)//60)))  # cap ~60 points
+    series = {}
+    for name, r in rates.items():
+        vals = []
+        for m in months:
+            yrs = m/12.0
+            vals.append(scenario_growth(initial, monthly, yrs, r))
+        series[name] = vals
 
-    with right:
-        st.subheader("Smart Insights")
-        st.markdown("<div class='insight-card'>", unsafe_allow_html=True)
-        adv_text = st.session_state.advice_text
-        # Split into bullets
-        bullets = []
-        if "\n\n" in adv_text:
-            bullets = adv_text.split("\n\n")
-        elif "\n" in adv_text:
-            bullets = adv_text.split("\n")
-        else:
-            bullets = [s.strip() for s in adv_text.split(". ") if s.strip()]
-        for i, b in enumerate(bullets[:4]):
-            st.markdown(f"**•** {b.strip()}")
-        st.markdown("---")
-        st.markdown("<div class='small-note'>High-level insights only. For implementation, contact OptiFin.</div>", unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    metrics = {k: scenario_growth(initial, monthly, years, r) for k, r in rates.items()}
+    return months, series, metrics
 
-    st.markdown("---")
-    st.subheader("Full Advice")
-    st.write(adv_text)
+# ---------------- EXPORTS ----------------
+def fetch_logo_reader():
+    if not LOGO_URL: return None
+    try:
+        r = requests.get(LOGO_URL, timeout=5)
+        if r.status_code == 200:
+            return ImageReader(io.BytesIO(r.content))
+    except Exception:
+        return None
+    return None
 
-    # Exports
-    st.markdown("---")
-    st.subheader("Branded Exports")
-    colp1, colp2 = st.columns([1,1])
-    with colp1:
-        pdf_bytes = build_branded_pdf(ut, raw_inputs, adv_text, st.session_state.lead)
-        st.download_button("Download Branded PDF", data=pdf_bytes, file_name=f"OptiFin_Report_{ut}.pdf", key="download_pdf")
-    with colp2:
-        xlsx_bytes = build_styled_excel(ut, raw_inputs, adv_text)
-        st.download_button("Download Branded Excel", data=xlsx_bytes, file_name=f"OptiFin_Report_{ut}.xlsx", key="download_xlsx")
-
-    # Contact capture
-    st.markdown("---")
-    st.subheader("Contact & Lead Capture")
-    lead_name = st.text_input("Contact name", value=st.session_state.lead.get("name",""), key="lead_name")
-    lead_email = st.text_input("Contact email", value=st.session_state.lead.get("email",""), key="lead_email")
-    lead_notes = st.text_area("Notes for our team", value=st.session_state.lead.get("notes",""), key="lead_notes")
-    if st.button("Save Lead & Generate Contact PDF", key="lead_save"):
-        st.session_state.lead.update({"name": lead_name, "email": lead_email, "notes": lead_notes, "user_type": ut, "service": svc})
-        summary_pdf = build_contact_summary_pdf(ut, raw_inputs, adv_text, st.session_state.lead)
-        st.download_button("Download Contact Summary PDF", data=summary_pdf, file_name="OptiFin_Contact_Summary.pdf", key="download_contact_summary")
-
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# ---------------- EXPORT: PDF & Excel ----------------
 def build_branded_pdf(user_type, inputs_raw, advice, lead):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
     w, h = letter
-    # header bar
+
+    # Header bar
     c.setFillColorRGB(0.03,0.19,0.31)
-    c.rect(0, h-72, w, 72, fill=1, stroke=0)
+    c.rect(0, h-78, w, 78, fill=1, stroke=0)
+
+    # Logo (optional)
+    img = fetch_logo_reader()
     c.setFillColorRGB(1,1,1)
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(40, h-48, LOGO_TEXT)
-    c.setFont("Helvetica", 9)
-    c.drawString(40, h-64, f"{APP_TITLE} — {TAGLINE}")
-    # footer
+    if img:
+        c.drawImage(img, 40, h-70, width=120, height=40, mask='auto')
+    else:
+        c.setFont("Helvetica-Bold", 22)
+        c.drawString(40, h-48, LOGO_TEXT)
+
+    c.setFont("Helvetica", 10)
+    c.drawString(40, h-68, f"{APP_TITLE} — {TAGLINE}")
+
+    # Footer
     c.setFillColorRGB(0.2, 0.2, 0.2)
     c.setFont("Helvetica", 8)
     c.drawString(40, 30, f"OptiFin Confidential • Generated: {datetime.date.today().isoformat()}")
-    # body
-    y = h - 100
+
+    # Body
+    y = h - 110
     c.setFillColorRGB(0,0,0)
     c.setFont("Helvetica-Bold", 12)
     c.drawString(40, y, f"Client: {lead.get('name','(not provided)')}")
     c.setFont("Helvetica", 10)
     c.drawString(350, y, f"User Type: {user_type.capitalize()}")
     y -= 18
+
     c.setFont("Helvetica-Bold", 11)
     c.drawString(40, y, "Inputs:")
     y -= 12
     c.setFont("Helvetica", 10)
     for k, v in inputs_raw.items():
-        line = f"{k}: {v}"
-        c.drawString(45, y, (line[:110]))
+        c.drawString(45, y, f"{k}: {v}")
         y -= 12
         if y < 110:
-            c.showPage(); y = h - 100
+            c.showPage(); y = h - 80
+
     y -= 6
     c.setFont("Helvetica-Bold", 11)
     c.drawString(40, y, "High-level Advice:")
     y -= 14
     c.setFont("Helvetica", 10)
-    for line in textwrap.wrap(advice, width=85):
+    for line in textwrap.wrap(advice, width=90):
         c.drawString(45, y, line)
         y -= 12
         if y < 90:
-            c.showPage(); y = h - 100
+            c.showPage(); y = h - 80
+
     c.save()
-    pdf = buf.getvalue(); buf.close()
-    return pdf
+    return buf.getvalue()
 
 def build_styled_excel(user_type, inputs_raw, advice):
     out = io.BytesIO()
     wb = xlsxwriter.Workbook(out, {'in_memory': True})
-    fmt_title = wb.add_format({'bold': True, 'font_size': 16})
-    fmt_header = wb.add_format({'bold': True, 'bg_color': '#EDE7D9'})
+    fmt_title = wb.add_format({'bold': True, 'font_size': 18, 'font_color': '#08283f'})
+    fmt_sub = wb.add_format({'font_color': '#08283f'})
+    fmt_header = wb.add_format({'bold': True, 'bg_color': '#EDE7D9', 'border':1})
     fmt_money = wb.add_format({'num_format': '#,##0.00', 'align': 'left'})
     fmt_wrap = wb.add_format({'text_wrap': True})
+    fmt_box = wb.add_format({'border':1})
+
     ws = wb.add_worksheet("OptiFin Report")
-    ws.set_column('A:A', 30)
-    ws.set_column('B:B', 50)
+    ws.set_column('A:A', 32); ws.set_column('B:B', 50)
     ws.write(0,0, LOGO_TEXT, fmt_title)
-    ws.write(1,0, f"Report type: {user_type}")
-    ws.write(3,0, "Input", fmt_header)
-    ws.write(3,1, "Value", fmt_header)
-    row = 4
+    ws.write(1,0, f"{APP_TITLE} — {TAGLINE}", fmt_sub)
+
+    ws.write(3,0, "User Type", fmt_header); ws.write(3,1, user_type)
+    ws.write(5,0, "Input", fmt_header); ws.write(5,1, "Value", fmt_header)
+    row = 6
     for k, v in inputs_raw.items():
-        ws.write(row, 0, k)
+        ws.write(row,0,k, fmt_box)
         val = parse_num(v) if isinstance(v, str) else v
         if isinstance(val, (int,float)) and not (isinstance(val, float) and math.isnan(val)):
-            ws.write_number(row, 1, val, fmt_money)
+            ws.write_number(row,1,val, fmt_money)
         else:
-            ws.write(row, 1, str(v))
+            ws.write(row,1,str(v))
         row += 1
     row += 1
-    ws.write(row, 0, "Advice", fmt_header)
-    ws.write(row, 1, advice, fmt_wrap)
+    ws.write(row,0,"Advice", fmt_header)
+    ws.write(row,1,advice, fmt_wrap)
+
     ws2 = wb.add_worksheet("Brand")
     ws2.write(0,0, APP_TITLE, fmt_title)
-    ws2.write(1,0, TAGLINE)
+    ws2.write(1,0, TAGLINE, fmt_sub)
+
     wb.close()
     return out.getvalue()
 
@@ -542,77 +570,170 @@ def build_contact_summary_pdf(user_type, inputs_raw, advice, lead):
     buf = io.BytesIO()
     c = canvas.Canvas(buf, pagesize=letter)
     w, h = letter
+
     c.setFillColorRGB(0.03,0.19,0.31)
     c.rect(0, h-60, w, 60, fill=1, stroke=0)
+
+    img = fetch_logo_reader()
     c.setFillColorRGB(1,1,1)
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(40, h-42, LOGO_TEXT)
-    c.setFont("Helvetica", 9)
-    c.drawString(40, h-58, f"Contact Summary • {datetime.date.today().isoformat()}")
+    if img:
+        c.drawImage(img, 40, h-52, width=110, height=32, mask='auto')
+    else:
+        c.setFont("Helvetica-Bold", 16); c.drawString(40, h-40, LOGO_TEXT)
+
     y = h - 90
     c.setFillColorRGB(0,0,0)
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(40, y, f"Lead: {lead.get('name','(not provided)')}")
-    y -= 14
-    c.setFont("Helvetica", 10)
-    c.drawString(40, y, f"Email: {lead.get('email','')}")
+    c.setFont("Helvetica-Bold", 12)
+    c.drawString(40, y, "Contact Summary")
     y -= 16
-    c.drawString(40, y, "Inputs summary:")
-    y -= 12
+    c.setFont("Helvetica", 10)
+    c.drawString(40, y, f"Lead: {lead.get('name','')}")
+    y -= 14
+    c.drawString(40, y, f"Email: {lead.get('email','')}")
+    y -= 14
+    c.drawString(40, y, f"Phone: {lead.get('phone','')}")
+    y -= 18
+    c.setFont("Helvetica-Bold", 11); c.drawString(40,y,"Inputs:"); y -= 12
+    c.setFont("Helvetica", 10)
     for k, v in inputs_raw.items():
-        c.drawString(45, y, f"{k}: {v}")
-        y -= 12
-        if y < 60:
-            c.showPage(); y = h - 90
+        c.drawString(45, y, f"{k}: {v}"); y -= 12
+        if y < 70: c.showPage(); y = h - 90
     y -= 6
-    c.drawString(40, y, "Advice summary:")
-    y -= 12
-    for line in textwrap.wrap(advice, width=85):
-        c.drawString(45, y, line)
-        y -= 12
-        if y < 60:
-            c.showPage(); y = h - 90
+    c.setFont("Helvetica-Bold", 11); c.drawString(40,y,"Advice summary:"); y -= 12
+    c.setFont("Helvetica", 10)
+    for line in textwrap.wrap(advice, width=90):
+        c.drawString(45, y, line); y -= 12
+        if y < 70: c.showPage(); y = h - 90
     c.save()
-    pdf = buf.getvalue(); buf.close()
-    return pdf
+    return buf.getvalue()
 
-# ---------------- TOP NAV ----------------
+# ---------------- RESULTS ----------------
+def page_results():
+    ut = ss.user_type
+    svc = ss.service_choice or "Invest"
+
+    st.markdown("<div class='content-card'>", unsafe_allow_html=True)
+    st.markdown(f"### {ut.capitalize()} — Results")
+
+    # gather inputs
+    if ut == "individual":
+        raw_inputs = ss.inputs_individual
+    elif ut == "household":
+        raw_inputs = ss.inputs_household
+    else:
+        raw_inputs = ss.inputs_business
+
+    # advice (only generate once per visit)
+    if not ss.advice_text:
+        ss.advice_text = generate_advice(ut, raw_inputs, svc)
+
+    # scenarios
+    months, series, metrics = build_scenarios(ut, raw_inputs)
+
+    # layout: chart + insights
+    left, right = st.columns([2,1])
+    with left:
+        st.subheader("Multi-Scenario Projection")
+        # Compact, uncluttered chart
+        fig, ax = plt.subplots(figsize=(6.2,2.8))
+        x = np.arange(len(months))
+        for name, vals in series.items():
+            ax.plot(x, vals, linewidth=1.6, label=name)
+        ax.set_xticks([0, len(x)//2, len(x)-1])
+        ax.set_xticklabels(["Now", f"{int(months[len(x)//2]/12)}y", f"{int(months[-1]/12)}y"])
+        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"R {v:,.0f}"))
+        ax.grid(axis='y', linestyle='--', linewidth=0.4, alpha=0.6)
+        ax.legend(loc="upper left", ncol=3, fontsize=8, frameon=False)
+        plt.tight_layout()
+        st.pyplot(fig, clear_figure=True)
+
+    with right:
+        st.subheader("Key Metrics")
+        c1, c2, c3 = st.columns(3)
+        def fmt(v): 
+            try: return f"R {float(v):,.0f}"
+            except: return str(v)
+        c1.markdown(f"<div class='kpi'><small>Conservative</small><h4>{fmt(metrics['Conservative'])}</h4></div>", unsafe_allow_html=True)
+        c2.markdown(f"<div class='kpi'><small>Baseline</small><h4>{fmt(metrics['Baseline'])}</h4></div>", unsafe_allow_html=True)
+        c3.markdown(f"<div class='kpi'><small>Aggressive</small><h4>{fmt(metrics['Aggressive'])}</h4></div>", unsafe_allow_html=True)
+
+        st.markdown("<div class='insight-card' style='margin-top:8px'>", unsafe_allow_html=True)
+        st.markdown("**Smart Insights**")
+        bullets = [s.strip() for s in (ss.advice_text.replace("\r","").split("\n\n")) if s.strip()]
+        for b in bullets[:3]:
+            st.markdown(f"- {b}")
+        st.markdown("<div class='small-note'>For implementation steps and quantified tax savings, contact OptiFin.</div>", unsafe_allow_html=True)
+        st.markdown("</div>", unsafe_allow_html=True)
+
+    st.markdown("---")
+    st.subheader("Full Advice")
+    st.write(ss.advice_text)
+
+    # Exports
+    st.markdown("---")
+    st.subheader("Branded Exports")
+    colp1, colp2 = st.columns([1,1])
+    with colp1:
+        pdf_bytes = build_branded_pdf(ut, raw_inputs, ss.advice_text, ss.lead)
+        st.download_button("Download Branded PDF", data=pdf_bytes, file_name=f"OptiFin_Report_{ut}.pdf", key="dl_pdf")
+    with colp2:
+        xlsx_bytes = build_styled_excel(ut, raw_inputs, ss.advice_text)
+        st.download_button("Download Branded Excel", data=xlsx_bytes, file_name=f"OptiFin_Report_{ut}.xlsx", key="dl_xlsx")
+
+    # Lead capture
+    st.markdown("---")
+    st.subheader("Contact & Lead Capture")
+    lead_name = st.text_input("Contact name", value=ss.lead.get("name",""), key="lead_name")
+    lead_email = st.text_input("Contact email", value=ss.lead.get("email",""), key="lead_email")
+    lead_phone = st.text_input("Phone", value=ss.lead.get("phone",""), key="lead_phone")
+    lead_notes = st.text_area("Notes", value=ss.lead.get("notes",""), key="lead_notes")
+    col_save, col_pdf, col_sheet = st.columns([1,1,1])
+    if col_save.button("Save Lead", key="lead_save_btn"):
+        ss.lead.update({"name": lead_name, "email": lead_email, "phone": lead_phone, "notes": lead_notes, "user_type": ut, "service": ss.service_choice})
+        st.success("Lead saved locally for this session.")
+    if col_pdf.button("Download Contact Summary PDF", key="lead_pdf_btn"):
+        ss.lead.update({"name": lead_name, "email": lead_email, "phone": lead_phone, "notes": lead_notes, "user_type": ut, "service": ss.service_choice})
+        summary_pdf = build_contact_summary_pdf(ut, raw_inputs, ss.advice_text, ss.lead)
+        st.download_button("Download Now", data=summary_pdf, file_name="OptiFin_Contact_Summary.pdf", key="lead_pdf_dl")
+    if col_sheet.button("Send to Google Sheets", key="lead_sheet_btn"):
+        if GS_ENABLED and GS_SA and GS_SHEET_ID:
+            ok, msg = append_lead_to_gsheet({
+                "name": lead_name, "email": lead_email, "phone": lead_phone,
+                "notes": lead_notes, "user_type": ut, "service": ss.service_choice
+            })
+            if ok: st.success("Lead stored to Google Sheets.")
+            else: st.warning(msg)
+        else:
+            st.info("Google Sheets not configured. Add service account JSON + SHEET ID to secrets.")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ---------------- NAV ----------------
 def render_top_nav():
-    col1, col2, col3, col4 = st.columns([1,1,1,3])
-    with col1:
-        if st.button("Home", key="topnav_home_btn"):
-            st.session_state.page = "home"; st.rerun()
-    with col2:
-        if st.button("Service", key="topnav_service_btn"):
-            if st.session_state.user_type:
-                st.session_state.page = "service"; st.rerun()
-            else:
-                st.warning("Choose a category from Home first.")
-    with col3:
-        if st.button("Questions", key="topnav_questions_btn"):
-            if st.session_state.user_type:
-                st.session_state.page = "questions"; st.rerun()
-            else:
-                st.warning("Choose a category from Home first.")
-    with col4:
-        st.markdown(f"<div style='text-align:right; color:#444'><small>{APP_TITLE} • {TAGLINE}</small></div>", unsafe_allow_html=True)
+    c1, c2, c3, c4 = st.columns([1,1,1,3])
+    if c1.button("Home", key="nav_home"): ss.page="home"; st.rerun()
+    if c2.button("Service", key="nav_service"):
+        if ss.user_type: ss.page="service"; st.rerun()
+        else: st.warning("Choose a category on Home first.")
+    if c3.button("Questions", key="nav_questions"):
+        if ss.user_type: ss.page="questions"; st.rerun()
+        else: st.warning("Choose a category on Home first.")
+    c4.markdown(f"<div style='text-align:right;color:#444'><small>{APP_TITLE} • {TAGLINE}</small></div>", unsafe_allow_html=True)
 
 # ---------------- MAIN ----------------
 def main():
-    if not st.session_state.privacy_accepted or st.session_state.page == "privacy":
-        page_privacy()
-        return
-
+    if not ss.privacy_accepted or ss.page == "privacy":
+        page_privacy(); return
     render_top_nav()
-
-    page = st.session_state.page
-    if page == "home":
-        page_home()
-    elif page == "service":
+    if ss.page == "home": page_home()
+    elif ss.page == "service": 
+        if not ss.user_type: ss.page="home"; st.rerun()
         page_service()
-    elif page == "questions":
+    elif ss.page == "questions":
+        if not ss.user_type: ss.page="home"; st.rerun()
         page_questions()
-    elif page == "results":
+    elif ss.page == "results":
+        if not ss.user_type: ss.page="home"; st.rerun()
         page_results()
     else:
         page_home()
