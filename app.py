@@ -3,185 +3,148 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
+import io
 import xlsxwriter
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-import io
 import openai
 
 # ---------------- PAGE CONFIG ----------------
-st.set_page_config(page_title="OptiFin", page_icon="💼", layout="wide")
+st.set_page_config(page_title="OptiFin", layout="wide", page_icon="💼")
 
-# ---------------- BACKGROUND IMAGE ----------------
-BG_IMAGE_URL = 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?ixlib=rb-4.0.3&auto=format&fit=crop&w=1470&q=80'
+# ---------------- BACKGROUND ----------------
+BG_IMAGE_URL = "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1470&q=80"
 st.markdown(f"""
     <style>
     .stApp {{
         background-image: url('{BG_IMAGE_URL}');
         background-size: cover;
         background-position: center;
-        color: black;
     }}
-    input[type=text], .stNumberInput>div>input {{
-        font-size: 1.2em !important;
-        padding: 0.5em;
-        color: black !important;
-        background-color: rgba(255,255,255,0.9) !important;
-    }}
-    .stButton>button {{
-        background-color: #4CAF50;
+    .title {{
         color: white;
+        font-size: 2.5em;
         font-weight: bold;
     }}
-    .privacy-text {{
+    .subheader {{
         color: white;
-        font-size: 1.1em;
+        font-size: 1.5em;
     }}
-    .ai-insight-box {{
-        border: 2px solid #4CAF50;
-        border-radius: 10px;
-        padding: 10px;
-        margin-top: 10px;
-        background-color: rgba(255,255,255,0.85);
+    input, .stButton > button {{
+        color: black;
+        background-color: #f0f0f0;
     }}
     </style>
 """, unsafe_allow_html=True)
 
 # ---------------- SESSION STATE ----------------
 if 'page' not in st.session_state:
-    st.session_state.page = 'privacy'
+    st.session_state.page = 'home'
 if 'user_type' not in st.session_state:
     st.session_state.user_type = None
 if 'privacy_accepted' not in st.session_state:
     st.session_state.privacy_accepted = False
 if 'ai_response' not in st.session_state:
     st.session_state.ai_response = ""
-if 'category' not in st.session_state:
-    st.session_state.category = None
 
 # ---------------- PRIVACY AGREEMENT ----------------
-def privacy_agreement():
-    st.title("Privacy Agreement")
+def show_privacy():
+    st.title("Privacy Agreement", anchor=False)
     st.markdown("""
-    <div class="privacy-text">
-    Welcome to OptiFin. All information you provide will be securely stored in our encrypted network. 
-    By clicking 'Accept', you acknowledge and agree that you have read this privacy agreement, 
-    and you consent to the collection and use of your data for the purpose of providing personalized 
-    financial advice. This is a legally binding agreement. If you do not accept, you will be redirected 
-    away from this site.
+    <div style='color:white;'>
+    All data entered on this platform is stored securely in compliance with applicable privacy laws.
+    By clicking 'Accept', you enter a legally binding agreement that allows OptiFin to use your 
+    information solely for providing personalized financial advice. No data will be shared 
+    externally without your explicit consent. If you do not accept, you will be redirected away 
+    from this website.
     </div>
     """, unsafe_allow_html=True)
     accept = st.checkbox("I accept the privacy agreement", key="privacy_accept")
     if accept:
         st.session_state.privacy_accepted = True
-        st.session_state.page = 'home'
         st.experimental_rerun()
     else:
-        st.error("You must accept to continue.")
+        st.warning("You must accept to continue.")
         st.stop()
 
-# ---------------- AI SEARCH ----------------
-def ai_search():
-    st.subheader("Describe your financial situation or goals")
-    query = st.text_input("", placeholder="Type anything about your finances, investments, or taxes...", key="ai_search_input")
-    if st.button("Submit", key="ai_search_button") and query:
-        response = get_ai_redirect(query)
-        st.session_state.user_type = response
-        st.session_state.page = 'dashboard'
-        st.experimental_rerun()
+# ---------------- HOME PAGE ----------------
+def show_home():
+    st.title("Welcome to OptiFin", anchor=False)
+    st.subheader("Get personalized financial advice", anchor=False)
 
-def get_ai_redirect(text):
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
-    if not openai.api_key:
-        return 'individual'
-    try:
-        prompt = f"""
-        Determine if this query is best for 'individual', 'household', or 'business' financial advice:
-        {text}
-        Return only one of: individual, household, business
-        """
-        completion = openai.Completion.create(
-            engine="text-davinci-003",
-            prompt=prompt,
-            max_tokens=10
-        )
-        result = completion.choices[0].text.strip().lower()
-        if result not in ['individual', 'household', 'business']:
-            return 'individual'
-        return result
-    except:
-        return 'individual'
-
-# ---------------- USER TYPE SELECTION ----------------
-def select_user_type():
-    st.subheader("Choose your category")
+    st.markdown("### Select your profile type:")
     col1, col2, col3 = st.columns(3)
-    if col1.button("Individual", key="btn_individual"):
+
+    if col1.button("Individual", key="home_individual_btn"):
         st.session_state.user_type = 'individual'
         st.session_state.page = 'dashboard'
         st.experimental_rerun()
-    if col2.button("Household", key="btn_household"):
+    if col2.button("Household", key="home_household_btn"):
         st.session_state.user_type = 'household'
         st.session_state.page = 'dashboard'
         st.experimental_rerun()
-    if col3.button("Business", key="btn_business"):
+    if col3.button("Business", key="home_business_btn"):
         st.session_state.user_type = 'business'
         st.session_state.page = 'dashboard'
         st.experimental_rerun()
 
 # ---------------- DASHBOARD ----------------
-def dashboard():
-    st.title(f"{st.session_state.user_type.capitalize()} Dashboard")
+def show_dashboard():
+    st.title(f"{st.session_state.user_type.capitalize()} Dashboard", anchor=False)
     user_type = st.session_state.user_type
-
     inputs = {}
+
+    # ---------------- INPUTS ----------------
     if user_type == 'individual':
-        inputs['Annual Income'] = st.number_input("Annual Income (R)", min_value=0.0, format="%.2f", key="ind_income")
-        inputs['Current Investments'] = st.number_input("Current Investments (R)", min_value=0.0, format="%.2f", key="ind_invest")
-        inputs['Risk Tolerance (1-10)'] = st.slider("Risk Tolerance (1 = low, 10 = high)", 1, 10, key="ind_risk")
-        inputs['Deductions'] = st.number_input("Annual Deductions (R)", min_value=0.0, format="%.2f", key="ind_deduct")
+        inputs['Annual Income'] = st.number_input("Annual Income (R)", min_value=0.0, key="ind_income")
+        inputs['Current Investments'] = st.number_input("Current Investment Value (R)", min_value=0.0, key="ind_invest")
+        inputs['Risk Tolerance'] = st.slider("Risk Tolerance (1-10)", 1, 10, key="ind_risk")
+        inputs['Deductions'] = st.number_input("Annual Deductions (R)", min_value=0.0, key="ind_deduction")
     elif user_type == 'household':
-        inputs['Household Income'] = st.number_input("Household Annual Income (R)", min_value=0.0, format="%.2f", key="hh_income")
+        inputs['Household Income'] = st.number_input("Household Annual Income (R)", min_value=0.0, key="hh_income")
         inputs['Number of Children'] = st.number_input("Number of Children", min_value=0, step=1, key="hh_children")
-        inputs['Current Household Investments'] = st.number_input("Current Investments (R)", min_value=0.0, format="%.2f", key="hh_invest")
-        inputs['Deductions'] = st.number_input("Total Household Deductions (R)", min_value=0.0, format="%.2f", key="hh_deduct")
+        inputs['Household Deductions'] = st.number_input("Total Household Deductions (R)", min_value=0.0, key="hh_deduction")
+        inputs['Current Investments'] = st.number_input("Current Investments (R)", min_value=0.0, key="hh_invest")
     elif user_type == 'business':
-        inputs['Annual Revenue'] = st.number_input("Annual Revenue (R)", min_value=0.0, format="%.2f", key="bus_revenue")
-        inputs['Annual Expenses'] = st.number_input("Annual Expenses (R)", min_value=0.0, format="%.2f", key="bus_expenses")
-        inputs['Number of Employees'] = st.number_input("Number of Employees", min_value=0, step=1, key="bus_employees")
-        inputs['Current Business Investments'] = st.number_input("Current Business Investments (R)", min_value=0.0, format="%.2f", key="bus_invest")
+        inputs['Annual Revenue'] = st.number_input("Annual Revenue (R)", min_value=0.0, key="biz_revenue")
+        inputs['Annual Expenses'] = st.number_input("Annual Expenses (R)", min_value=0.0, key="biz_expenses")
+        inputs['Number of Employees'] = st.number_input("Employees", min_value=0, step=1, key="biz_employees")
+        inputs['Current Investments'] = st.number_input("Current Business Investments (R)", min_value=0.0, key="biz_invest")
 
+    # ---------------- ADVICE ----------------
+    advice_box = st.empty()
     if st.button("Get Personalized Advice", key="btn_get_advice"):
-        advice = generate_advice_gpt(user_type, inputs)
+        advice = generate_advice(inputs, user_type)
         st.session_state.ai_response = advice
-        st.info(advice)
+        advice_box.info(advice)
 
-    # ---------------- CHARTS ----------------
-    st.subheader("Financial Overview")
-    values = list(inputs.values())
-    labels = list(inputs.keys())
-    if values:
-        fig, ax = plt.subplots(figsize=(5,3))
-        ax.plot(labels, values, marker='o')
-        ax.set_ylabel('R Amounts')
-        ax.set_title('Line Chart Overview')
-        plt.xticks(rotation=45)
+    # ---------------- CHART ----------------
+    if inputs:
+        st.subheader("Financial Overview")
+        fig, ax = plt.subplots(figsize=(4,3))
+        if user_type in ['individual','household']:
+            labels = list(inputs.keys())
+            values = [v if isinstance(v,(int,float)) else 0 for v in inputs.values()]
+            ax.plot(labels, values, marker='o')
+            ax.set_title("Your Financial Data")
+        elif user_type == 'business':
+            labels = ['Revenue','Expenses','Investments']
+            values = [inputs.get('Annual Revenue',0), inputs.get('Annual Expenses',0), inputs.get('Current Investments',0)]
+            ax.bar(labels, values, color=['green','red','blue'])
+            ax.set_title("Business Financial Overview")
         st.pyplot(fig)
 
-        # AI insight box
-        st.markdown(f"<div class='ai-insight-box'><b>AI Insights:</b> Based on your inputs, strategic planning can help optimize your finances. Contact us for detailed execution.</div>", unsafe_allow_html=True)
-
-    if st.button("Download PDF Report", key="btn_pdf"):
+    # ---------------- DOWNLOAD REPORTS ----------------
+    if st.button("Download PDF Report", key="btn_download_pdf"):
         pdf_bytes = create_pdf(inputs, user_type, st.session_state.ai_response)
-        st.download_button("Download PDF", pdf_bytes, file_name="report.pdf")
-
-    if st.button("Download Excel Report", key="btn_excel"):
+        st.download_button("Download PDF", pdf_bytes, file_name="OptiFin_Report.pdf", key="download_pdf")
+    if st.button("Download Excel Report", key="btn_download_excel"):
         excel_bytes = create_excel(inputs, user_type, st.session_state.ai_response)
-        st.download_button("Download Excel", excel_bytes, file_name="report.xlsx")
+        st.download_button("Download Excel", excel_bytes, file_name="OptiFin_Report.xlsx", key="download_excel")
 
-# ---------------- GPT ADVICE ----------------
-def generate_advice_gpt(user_type, inputs):
-    openai.api_key = st.secrets.get("OPENAI_API_KEY", "")
+# ---------------- AI ADVICE ----------------
+def generate_advice(inputs, user_type):
+    openai.api_key = st.secrets.get("OPENAI_API_KEY","")
     if not openai.api_key:
         return "OpenAI API key not found. Cannot generate advice."
 
@@ -190,12 +153,13 @@ def generate_advice_gpt(user_type, inputs):
         prompt = f"""
         You are a professional financial advisor. Based on these user inputs:
         {input_text}
-        Provide actionable financial advice in 3-5 bullet points, including potential tax reductions and investment ideas. Do NOT give complete instructions; encourage the user to contact us to implement solutions.
+        Provide actionable financial advice in bullet points. Focus on ways to reduce taxes, improve investments,
+        and optimize finances. Do not reveal full instructions—encourage contacting OptiFin to implement strategies.
         """
         completion = openai.Completion.create(
             engine="text-davinci-003",
             prompt=prompt,
-            max_tokens=400
+            max_tokens=350
         )
         return completion.choices[0].text.strip()
     except:
@@ -205,11 +169,11 @@ def generate_advice_gpt(user_type, inputs):
 def create_pdf(inputs, user_type, advice):
     buffer = io.BytesIO()
     c = canvas.Canvas(buffer, pagesize=letter)
-    c.setFont("Helvetica-Bold", 16)
-    c.drawString(50,770,"OptiFin Financial Report")
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(50,750,"OptiFin Financial Report")
     c.setFont("Helvetica", 12)
-    c.drawString(50,750,f"User Type: {user_type.capitalize()}")
-    y = 730
+    c.drawString(50,730,f"User Type: {user_type.capitalize()}")
+    y = 710
     for k,v in inputs.items():
         c.drawString(50,y,f"{k}: {v}")
         y -= 20
@@ -227,31 +191,32 @@ def create_pdf(inputs, user_type, advice):
 def create_excel(inputs, user_type, advice):
     output = io.BytesIO()
     workbook = xlsxwriter.Workbook(output, {'in_memory': True})
-    worksheet = workbook.add_worksheet()
-    header_format = workbook.add_format({'bold': True, 'font_color': 'blue', 'font_size': 14})
-    worksheet.write('A1', 'OptiFin Financial Report', header_format)
-    worksheet.write('A2', 'User Type', header_format)
-    worksheet.write('B2', user_type.capitalize())
+    worksheet = workbook.add_worksheet("OptiFin Report")
+    bold = workbook.add_format({'bold': True})
+    worksheet.write('A1', "OptiFin Financial Report", bold)
+    worksheet.write('A2', f"User Type: {user_type.capitalize()}")
     row = 3
     for k,v in inputs.items():
         worksheet.write(row,0,k)
         worksheet.write(row,1,v)
         row += 1
-    worksheet.write(row,0,"AI Advice", header_format)
-    worksheet.write(row,1,advice)
+    worksheet.write(row+1,0,"AI Advice")
+    for i,line in enumerate(advice.split("\n")):
+        worksheet.write(row+2+i,0,line)
     workbook.close()
     return output.getvalue()
 
 # ---------------- MAIN ----------------
 def main():
     if not st.session_state.privacy_accepted:
-        privacy_agreement()
+        show_privacy()
     elif st.session_state.page == 'home':
-        st.title("Welcome to OptiFin")
-        ai_search()
-        select_user_type()
+        show_home()
     elif st.session_state.page == 'dashboard':
-        dashboard()
+        show_dashboard()
+    else:
+        show_home()
 
 if __name__ == "__main__":
     main()
+
