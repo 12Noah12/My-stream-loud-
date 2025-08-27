@@ -2,25 +2,25 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
-from io import BytesIO
-from datetime import datetime, timedelta
 from fpdf import FPDF
+from datetime import datetime, timedelta
+from io import BytesIO
 
-# Optional: install yfinance if you want live market data
+# Optional: install yfinance if live market data is needed
 try:
     import yfinance as yf
     YF_AVAILABLE = True
-except Exception:
+except:
     YF_AVAILABLE = False
 
-# ----------------------- Page Config -----------------------
+# ---------------- Page Config ----------------
 st.set_page_config(
     page_title="OptiFin",
     page_icon="💹",
     layout="wide"
 )
 
-# ----------------------- Custom CSS -----------------------
+# ---------------- Custom CSS ----------------
 st.markdown("""
 <style>
 .stApp {
@@ -29,9 +29,10 @@ st.markdown("""
   background-position: center;
 }
 .optifin-overlay {
-  background: rgba(255,255,255,0.9);
+  background: rgba(255,255,255,0.92);
   border-radius: 16px;
   padding: 20px;
+  margin-bottom: 20px;
 }
 .ai-box {
   background: #0b1320;
@@ -54,22 +55,19 @@ st.markdown("""
   border-radius: 10px;
   font-weight: 600;
 }
-input[type=number]::-webkit-inner-spin-button,
-input[type=number]::-webkit-outer-spin-button { -webkit-appearance:none; margin:0; }
-input[type=number] { -moz-appearance:textfield; }
 </style>
 """, unsafe_allow_html=True)
 
-# ----------------------- Session State -----------------------
+# ---------------- Session State ----------------
 if "page" not in st.session_state: st.session_state.page = "privacy"
 if "user_type" not in st.session_state: st.session_state.user_type = None
 if "accepted_privacy" not in st.session_state: st.session_state.accepted_privacy = False
 
-# ----------------------- Navigation -----------------------
+# ---------------- Navigation ----------------
 def go(page):
     st.session_state.page = page
 
-# ----------------------- Helper Functions -----------------------
+# ---------------- Helper Functions ----------------
 def branded_pdf_bytes(title, lines, advice):
     pdf = FPDF()
     pdf.add_page()
@@ -104,43 +102,40 @@ def get_market_snapshot(tickers, days=7):
     start=end-timedelta(days=days*2)
     try:
         data=yf.download(tickers,start=start,end=end,progress=False,auto_adjust=True)
-        if len(tickers)==1:
-            last=float(data["Close"].dropna().iloc[-1])
-            first=float(data["Close"].dropna().iloc[0])
-            pct=(last-first)/first*100
-            snapshot.append((tickers[0],last,pct))
-        else:
-            closes=data["Close"].dropna()
-            if closes.empty: return [(t,None,None) for t in tickers]
-            for t in tickers:
-                try: last=float(closes[t].iloc[-1])
-                except: last=None
-                try: pct=(closes[t].iloc[-1]-closes[t].iloc[0])/closes[t].iloc[0]*100
-                except: pct=None
-                snapshot.append((t,last,pct))
-    except: snapshot=[(t,None,None) for t in tickers]
+        closes=data["Close"].dropna()
+        for t in tickers:
+            try:
+                last=float(closes[t].iloc[-1])
+                pct=(closes[t].iloc[-1]-closes[t].iloc[0])/closes[t].iloc[0]*100
+            except:
+                last=None
+                pct=None
+            snapshot.append((t,last,pct))
+    except:
+        snapshot=[(t,None,None) for t in tickers]
     return snapshot
 
 def ai_investment_advice(user):
     risk=user.get("risk","Medium")
     goal=user.get("goal_amount",0.0)
     monthly=user.get("monthly_contribution",0.0)
-    tickers,growth=("VOO","VXUS","AAPL","MSFT"),1.06
-    if risk=="Low": tickers=["VTI","BND","VXUS"];growth=1.03
-    if risk=="High": tickers=["QQQ","NVDA","SMH","TSLA"];growth=1.1
+    tickers=("VOO","VXUS","AAPL","MSFT")
+    growth=1.06
+    if risk=="Low": tickers=("VTI","BND","VXUS"); growth=1.03
+    if risk=="High": tickers=("QQQ","NVDA","SMH","TSLA"); growth=1.1
     bal=0.0;series=[]
     for _ in range(12):
         bal=(bal+monthly)*growth
         series.append(bal)
-    lines=[f"Risk profile: {risk}. Suggested: {', '.join(tickers)}."]
+    lines=[f"Risk profile: {risk}. Suggested tickers: {', '.join(tickers)}."]
     snaps=get_market_snapshot(tickers[:3])
     markets=[f"{t}: ${last:,.2f} ({pct:+.1f}%)" if last is not None else f"{t}: data N/A" for t,last,pct in snaps]
     lines.append("Market snapshot (7d): "+" | ".join(markets)+".")
     if goal and series[-1]<goal:
         gap=goal-series[-1]
-        lines.append(f"Projected ${series[-1]:,.0f} vs goal ${goal:,.0f}. Consider increasing contributions or risk slightly.")
+        lines.append(f"Projected ${series[-1]:,.0f} vs goal ${goal:,.0f}. Consider increasing contributions or adjusting risk.")
     else:
-        lines.append(f"Projected ${series[-1]:,.0f} in 12 months. Maintain discipline.")
+        lines.append(f"Projected ${series[-1]:,.0f} in 12 months. Maintain current strategy.")
     return "\n".join(lines), series
 
 def ai_tax_advice(user):
@@ -156,15 +151,14 @@ def ai_tax_advice(user):
           "Harvest capital losses prudently."]
     return est_tax, tips
 
-# ----------------------- Pages -----------------------
+# ---------------- Pages ----------------
 def page_privacy():
     st.markdown("<div class='optifin-overlay'>",unsafe_allow_html=True)
     st.markdown("## Privacy & Consent Agreement")
     st.markdown("By clicking **I Agree**, you consent to data processing for AI advisory only.")
     c1,c2=st.columns([1,1])
     with c1:
-        if st.button("I Decline",key="decline"):
-            st.stop()
+        if st.button("I Decline",key="decline"): st.stop()
     with c2:
         if st.button("I Agree",key="agree"):
             st.session_state.accepted_privacy=True
@@ -198,7 +192,7 @@ def page_advisor():
     user_data['dependants']=st.number_input("Dependants",min_value=0,step=1)
     
     advice_text, projection = ai_investment_advice(user_data)
-    est_tax,tips = ai_tax_advice(user_data)
+    est_tax, tips = ai_tax_advice(user_data)
     
     c1,c2 = st.columns([2,1])
     with c1:
@@ -216,7 +210,7 @@ def page_advisor():
     
     st.markdown("</div>",unsafe_allow_html=True)
 
-# ----------------------- Main -----------------------
+# ---------------- Main ----------------
 def main():
     if not st.session_state.accepted_privacy:
         page_privacy()
