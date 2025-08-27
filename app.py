@@ -1,579 +1,557 @@
-# app.py - OptiFin (Integrated production-ready single-file Streamlit app)
-import streamlit as st
-import pandas as pd
+# app.py
+import datetime as dt
+import io
+import math
+import textwrap
+from typing import Dict, Any, Tuple
+
 import numpy as np
-import matplotlib.pyplot as plt
-from matplotlib.ticker import FuncFormatter
-import yfinance as yf
-import io, math, datetime, textwrap
-from reportlab.pdfgen import canvas
-from reportlab.lib.pagesizes import letter
-import xlsxwriter
-import openai
-import base64
+import pandas as pd
+import streamlit as st
 
-# -------------------------
-# App meta and config
-# -------------------------
-APP_NAME = "OptiFin"
-TAGLINE = "AI-driven investment, tax & retirement planning"
-LOGO = "OPTIFIN"
-st.set_page_config(page_title=APP_NAME, page_icon="💼", layout="wide")
+# Optional libs (graceful fallback)
+try:
+    import yfinance as yf
+except Exception:
+    yf = None
 
-# -------------------------
-# Visual CSS – high contrast translucent panels
-# -------------------------
-BG = "https://images.unsplash.com/photo-1496307042754-b4aa456c4a2d?auto=format&fit=crop&w=1470&q=80"
-st.markdown(f"""
-<style>
-:root {{--accent:#0b5fff; --muted:#6b7785; --panel: rgba(255,255,255,0.96); --darkpanel: rgba(12,20,36,0.85);}}
-body, .stApp {{ background-image: url('{BG}'); background-size: cover; background-position: center; }}
-.translucent {{ background: var(--panel); padding:20px; border-radius:12px; box-shadow: 0 12px 30px rgba(8,12,20,0.12); color: #071022; }}
-.translucent-dark {{ background: var(--darkpanel); padding:18px; border-radius:12px; box-shadow: 0 12px 30px rgba(0,0,0,0.35); color: #fff; }}
-.header {{ font-weight:800; color:#07213f; font-size:20px; }}
-.sub {{ color:var(--muted); font-size:0.95rem; }}
-.small {{ color:var(--muted); font-size:0.9rem; }}
-.input-white input, .input-white textarea {{ background: #fff !important; color:#071022 !important; }}
-.ai-box {{ background: linear-gradient(180deg,#ffffff,#f6fbff); border-left: 4px solid var(--accent); padding:12px; border-radius:8px; }}
-.kpi {{ padding:10px; border-radius:10px; background:#f6f9ff; text-align:center; }}
-.btn-primary > button {{ background-color: var(--accent) !important; color: white !important; font-weight:700 !important; border-radius:8px !important; padding:8px 12px !important; }}
-.small-note {{ font-size:0.95rem; color:#13213a; }}
-</style>
-""", unsafe_allow_html=True)
+try:
+    from reportlab.lib.pagesizes import A4
+    from reportlab.pdfgen import canvas
+    from reportlab.lib import colors
+    from reportlab.lib.units import cm
+except Exception:
+    canvas = None
 
-# -------------------------
-# Stable key generator to avoid duplicate widget IDs
-# -------------------------
-def key(name: str):
-    """Return a stable unique key per page + name to avoid duplicate element ids."""
-    page = st.session_state.get("page", "main")
-    return f"{page}__{name}"
+try:
+    import xlsxwriter
+except Exception:
+    xlsxwriter = None
 
-# -------------------------
-# Session defaults
-# -------------------------
-if "page" not in st.session_state: st.session_state.page = "privacy"
-if "privacy_accepted" not in st.session_state: st.session_state.privacy_accepted = False
-if "user_type" not in st.session_state: st.session_state.user_type = None
-if "service_choice" not in st.session_state: st.session_state.service_choice = None
-if "inputs" not in st.session_state: st.session_state.inputs = {}
-if "advice" not in st.session_state: st.session_state.advice = ""
-if "market_snapshot" not in st.session_state: st.session_state.market_snapshot = ""
-if "latest_etf_recs" not in st.session_state: st.session_state.latest_etf_recs = []
-if "user_id" not in st.session_state: st.session_state.user_id = str(int(datetime.datetime.now().timestamp()))
+# ----------------------------------
+# App Config
+# ----------------------------------
+st.set_page_config(page_title="OptiFin", page_icon="💡", layout="wide")
 
-# -------------------------
-# OpenAI (optional)
-# -------------------------
-OPENAI_KEY = st.secrets.get("OPENAI_API_KEY", None)
-if OPENAI_KEY:
-    openai.api_key = OPENAI_KEY
+# ----------------------------------
+# Theme / Global CSS (Legibility)
+# ----------------------------------
+BG_IMAGE_URL = "https://images.unsplash.com/photo-1454165205744-3b78555e5572?q=80&w=1920&auto=format&fit=crop"
 
-def call_gpt(prompt: str, max_tokens=300, temp=0.15):
-    if not OPENAI_KEY:
-        raise RuntimeError("OpenAI key not set")
-    resp = openai.Completion.create(engine="text-davinci-003", prompt=prompt, max_tokens=max_tokens, temperature=temp)
-    return resp.choices[0].text.strip()
+st.markdown(
+    f"""
+    <style>
+      /* Page background */
+      .stApp {{
+        background: url('{BG_IMAGE_URL}') no-repeat center center fixed;
+        background-size: cover;
+      }}
+      /* High-contrast text defaults */
+      html, body, [class*="css"] {{
+        color: #111 !important;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji","Segoe UI Emoji" !important;
+      }}
+      /* Glass panels for legibility */
+      .glass {{
+        background: rgba(255,255,255,0.85);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(0,0,0,0.05);
+        border-radius: 16px;
+        padding: 18px 20px;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+      }}
+      .glass-dark {{
+        background: rgba(0,0,0,0.55);
+        -webkit-backdrop-filter: blur(8px);
+        backdrop-filter: blur(8px);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 16px;
+        padding: 18px 20px;
+        color:#fff !important;
+        box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      }}
+      .brand-title {{
+        font-weight: 800; 
+        letter-spacing: 0.3px;
+        color:#0f172a;
+        text-shadow: 0 2px 12px rgba(255,255,255,0.6);
+      }}
+      .muted {{
+        color:#334155 !important;
+      }}
+      .cta {{
+        background:#0ea5e9; 
+        color:#fff;
+        padding:10px 16px;
+        border-radius:12px;
+        text-decoration:none;
+        font-weight:600;
+        display:inline-block;
+      }}
+      /* Buttons & widgets contrast */
+      .stButton>button {{
+        border-radius: 12px;
+        border: 1px solid rgba(0,0,0,0.08);
+        font-weight: 700;
+      }}
+      .primary>button {{
+        background:#0ea5e9 !important;
+        color:#fff !important;
+        border: none !important;
+      }}
+      /* Smaller, tidy charts */
+      .chart-card {{
+        padding:12px 14px; 
+        border-radius:14px; 
+        background:#fff; 
+        border:1px solid rgba(0,0,0,0.06);
+      }}
+      /* Tooltip help icons */
+      .help {{
+        display:inline-block;
+        margin-left:8px;
+        color:#64748b;
+        cursor: help;
+        border-bottom: 1px dotted #64748b;
+      }}
+      /* Input label contrast */
+      label p {{
+        color:#0f172a !important; 
+        font-weight:600 !important;
+      }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
-# -------------------------
-# Utilities
-# -------------------------
-def parse_num(x):
-    if x is None: return 0.0
-    if isinstance(x, (int,float)): return float(x)
-    s = str(x).replace(",", "").replace("R","").replace("$","").strip()
-    if s == "": return 0.0
+# ----------------------------------
+# Session State (single-click flows)
+# ----------------------------------
+def init_state():
+    defaults = dict(
+        privacy_accepted=False,
+        page="home",  # "home" | "household" | "business"
+        subtool=None,  # tool chosen within a section
+        route_hint=None,  # AI router hint
+        last_advice=None,
+    )
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
+
+init_state()
+
+# ----------------------------------
+# Helpers
+# ----------------------------------
+def h2(text: str):
+    st.markdown(f"<h2 class='brand-title'>{text}</h2>", unsafe_allow_html=True)
+
+def pill(text: str):
+    st.markdown(
+        f"<span style='background:#e2e8f0;padding:6px 10px;border-radius:999px;font-weight:700;color:#0f172a'>{text}</span>",
+        unsafe_allow_html=True,
+    )
+
+def money(x: float) -> str:
     try:
-        return float(s)
-    except:
-        return 0.0
-
-def pretty_money(x):
-    try:
-        return f"R {float(x):,.0f}"
-    except:
-        return str(x)
-
-# -------------------------
-# Market helpers (yfinance)
-# -------------------------
-ETF_UNIVERSE = ["VTI","SPY","ACWI","EEM","IEV","BND","AGG","TIP","VNQ","IAU"]
-SAMPLE_STOCKS = ["AAPL","MSFT","NVDA","AMZN","TSLA","JPM"]
-
-def get_market_snapshot():
-    try:
-        tickers = ["SPY","VTI","^GSPC"]
-        df = yf.download(tickers, period="5d", progress=False, threads=False)
-        parts = []
-        for t in tickers:
-            try:
-                close = df[t]['Close'].iloc[-1]
-                parts.append(f"{t} {close:,.0f}")
-            except Exception:
-                pass
-        return " | ".join(parts) if parts else "Unavailable"
+        return f"R{float(x):,.0f}"
     except Exception:
-        return "Unavailable"
+        return "—"
 
-def compute_ticker_metrics(ticker):
+def safe_float(val: Any, default: float = 0.0) -> float:
     try:
-        t = yf.Ticker(ticker)
-        hist = t.history(period="1y", interval="1d", actions=False)
-        if hist is None or hist.empty: return None
-        latest = hist['Close'].iloc[-1]
-        ret_3m = latest / hist['Close'].iloc[-63] - 1 if len(hist) >= 63 else 0.0
-        ret_12m = latest / hist['Close'].iloc[0] - 1 if len(hist) > 0 else 0.0
-        daily = hist['Close'].pct_change().dropna()
-        vol = daily.std() * math.sqrt(252) if not daily.empty else 0.0
-        ma50 = hist['Close'].rolling(50).mean().iloc[-1] if len(hist) >= 50 else None
-        ma200 = hist['Close'].rolling(200).mean().iloc[-1] if len(hist) >= 200 else None
-        return {"ticker":ticker,"latest":latest,"ret_3m":ret_3m,"ret_12m":ret_12m,"vol":vol,"ma50":ma50,"ma200":ma200}
+        return float(val)
     except Exception:
+        return default
+
+# ----------------------------------
+# Router (AI-ish: robust keyword mapper)
+# ----------------------------------
+def route_from_query(q: str) -> Tuple[str, str]:
+    ql = q.lower()
+    # Naive but resilient mapping
+    household_keywords = ["family", "household", "budget", "kids", "spouse", "home", "mortgage", "rent", "retirement", "pension", "ra", "tfsa", "medical"]
+    business_keywords = ["business", "company", "corp", "corporate", "sme", "employees", "payroll", "vat", "provisional", "sars", "invoice", "revenue", "cashflow"]
+    invest_keywords = ["invest", "stocks", "shares", "etf", "index", "portfolio", "market", "trading", "bitcoin", "crypto"]
+
+    if any(k in ql for k in business_keywords):
+        return "business", "business"
+    if any(k in ql for k in household_keywords):
+        return "household", "household"
+    if any(k in ql for k in invest_keywords):
+        # Default invest goes to household unless they said business
+        return "household", "invest"
+    # Default to household
+    return "household", "household"
+
+# ----------------------------------
+# Privacy Page
+# ----------------------------------
+def page_privacy():
+    st.markdown("<div class='glass-dark'>", unsafe_allow_html=True)
+    h2("Privacy, Data Use & Consent")
+    st.markdown(
+        """
+        <div style="font-size:1.05rem; line-height:1.7">
+        This Agreement explains how OptiFin collects, uses, stores, and safeguards the information you provide in this app.  
+        By selecting <strong>Accept</strong>, you confirm that:
+        <ul>
+          <li>All information you enter may be stored on secure servers for analysis and service delivery.</li>
+          <li>We will use your data to personalize financial insights, forecasts, and documents (e.g., reports, spreadsheets).</li>
+          <li>You consent to automated processing and modeling to produce tailored advice.</li>
+          <li>We do not sell your personal information. Access is restricted to authorized staff for service provision.</li>
+          <li>Outputs are educational and do not constitute legal, tax, or financial advice. Decisions remain your responsibility.</li>
+          <li>You may request data deletion at any time by contacting support.</li>
+        </ul>
+        If you do not accept, you will be redirected away from the app.
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    colA, colB = st.columns([1, 1])
+    with colA:
+        accept = st.button("Accept", key="btn_accept_privacy", use_container_width=True)
+    with colB:
+        decline = st.button("Decline", key="btn_decline_privacy", use_container_width=True)
+
+    if accept:
+        st.session_state.privacy_accepted = True
+        st.session_state.page = "home"
+        st.success("Thanks. Your preferences are saved.")
+        st.rerun()
+    if decline:
+        # Show a blocking message + stop
+        st.error("Access denied. You chose not to accept the Privacy Agreement.")
+        st.markdown(
+            "<div class='glass' style='margin-top:12px'><strong>Close this tab</strong> to exit.</div>",
+            unsafe_allow_html=True,
+        )
+        st.stop()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ----------------------------------
+# PDF / Excel builders
+# ----------------------------------
+def build_pdf_report(title: str, inputs: Dict[str, Any], insights: str, chart_png: bytes | None) -> bytes | None:
+    if canvas is None:
         return None
-
-def rank_etfs(profile="Moderate", limit=6):
-    rows=[]
-    for tk in ETF_UNIVERSE:
-        m = compute_ticker_metrics(tk)
-        if m: rows.append(m)
-    if not rows: return []
-    df = pd.DataFrame(rows)
-    if profile.lower()=="low":
-        df['score'] = -df['vol'] + df['ret_12m']*2
-    elif profile.lower()=="high":
-        df['score'] = df['ret_12m']*3 - df['vol']*0.5
-    else:
-        df['score'] = df['ret_12m']*2 - df['vol']*0.8
-    df = df.sort_values('score', ascending=False)
-    recs = df.head(limit).to_dict(orient='records')
-    for r in recs:
-        r['explain'] = f"{r['ticker']}: 12m {r['ret_12m']*100:.1f}% | vol {r['vol']*100:.1f}%"
-    return recs
-
-# -------------------------
-# Deterministic fallback advice
-# -------------------------
-def deterministic_advice(user_type, inputs, market_snapshot):
-    if user_type == "individual":
-        return ("• Build a 3–6 month emergency fund before allocating to higher-risk investments.\n"
-                "• Use a low-cost global ETF core and small satellite positions for higher returns.\n"
-                "• Maximise local tax-advantaged retirement accounts where available.\n\nContact OptiFin for implementation and detailed modelling.")
-    elif user_type == "household":
-        return ("• Coordinate household tax allowances & family-oriented credits.\n"
-                "• Automate household savings and prioritise high-interest debt repayment.\n"
-                "• Consider splitting investments across tax-advantaged and taxable accounts.\n\nContact OptiFin for modelling & implementation.")
-    else:
-        return ("• Ensure strict bookkeeping and correct expense tagging; use company cards for eligible expenses.\n"
-                "• Review owner remuneration strategy (salary vs dividends) to optimize tax.\n"
-                "• Explore capital allowances and R&D credits if applicable.\n\nContact OptiFin to implement.")
-
-# -------------------------
-# GPT wrapper with fallback
-# -------------------------
-def generate_advice(user_type, inputs, market_snapshot):
-    # Compose a high-quality prompt when OpenAI is available
-    if OPENAI_KEY:
-        prompt = f"Market snapshot: {market_snapshot}\nUser type: {user_type}\nInputs:\n"
-        for k,v in inputs.items():
-            prompt += f"- {k}: {v}\n"
-        prompt += ("\nYou are a senior financial advisor. Provide 5 concise recommendations focusing on tax savings, "
-                   "investment allocation, and a short prioritized action plan. Do not provide step-by-step actionable implementation that bypasses professional services. "
-                   "End with a short estimate of potential annual savings (qualitative) and a single-line CTA to contact a professional.")
-        try:
-            text = call_gpt(prompt, max_tokens=450, temp=0.15)
-            return text
-        except Exception:
-            return deterministic_advice(user_type, inputs, market_snapshot)
-    else:
-        return deterministic_advice(user_type, inputs, market_snapshot)
-
-# -------------------------
-# Projection helper
-# -------------------------
-def project_growth(initial, monthly, years, annual_return):
-    r = annual_return / 12
-    n = years * 12
-    if r == 0:
-        return initial + monthly * n
-    fv_init = initial * ((1 + r) ** n)
-    fv_monthly = monthly * (((1 + r) ** n - 1) / r)
-    return fv_init + fv_monthly
-
-# -------------------------
-# PDF & Excel exports
-# -------------------------
-def build_branded_pdf(user_type, inputs, advice, etf_recs=None):
     buf = io.BytesIO()
-    c = canvas.Canvas(buf, pagesize=letter)
-    w,h = letter
-    # Header band
-    c.setFillColorRGB(0.06,0.20,0.38)
-    c.rect(0,h-80,w,80, fill=1, stroke=0)
-    c.setFillColorRGB(1,1,1)
+    c = canvas.Canvas(buf, pagesize=A4)
+    width, height = A4
+
+    # Letterhead
+    c.setFillColorRGB(0.06, 0.65, 0.91)
+    c.rect(0, height - 80, width, 80, fill=1, stroke=0)
+    c.setFillColorRGB(1, 1, 1)
     c.setFont("Helvetica-Bold", 20)
-    c.drawString(40, h-50, LOGO)
-    c.setFont("Helvetica", 10)
-    c.drawString(40, h-68, APP_NAME + " — " + TAGLINE)
-    # Body
-    y = h - 110
-    c.setFillColorRGB(0,0,0)
-    c.setFont("Helvetica-Bold", 12)
-    c.drawString(40, y, f"Client type: {user_type.capitalize()}")
-    y -= 18
-    c.setFont("Helvetica", 10)
-    c.drawString(40, y, "Summary of Inputs:")
-    y -= 14
-    for k,v in inputs.items():
-        c.drawString(50, y, f"{k}: {v}")
-        y -= 12
-        if y < 120:
-            c.showPage(); y = h - 80
-    y -= 6
-    c.setFont("Helvetica-Bold", 11); c.drawString(40, y, "AI Advice (high-level)")
-    y -= 14
-    for line in textwrap.wrap(advice, width=90):
-        c.setFont("Helvetica",10); c.drawString(45, y, line); y -= 12
-        if y < 120:
-            c.showPage(); y = h - 80
-    if etf_recs:
-        y -= 8
-        c.setFont("Helvetica-Bold", 11); c.drawString(40, y, "ETF suggestions")
-        y -= 14
-        for r in etf_recs[:6]:
-            row = f"{r.get('ticker')} — 12m {r.get('ret_12m',0)*100:.1f}% — vol {r.get('vol',0)*100:.1f}%"
-            c.setFont("Helvetica",10); c.drawString(45, y, row)
-            y -= 12
-            if y < 120:
-                c.showPage(); y = h - 80
+    c.drawString(2 * cm, height - 50, "OptiFin — Personalised Financial Report")
+
+    # Title
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(2 * cm, height - 110, title)
+
+    # Inputs block
+    y = height - 140
+    c.setFont("Helvetica", 11)
+    for k, v in inputs.items():
+        c.drawString(2 * cm, y, f"{k}: {v}")
+        y -= 16
+        if y < 4 * cm:
+            c.showPage()
+            y = height - 100
+
+    # Insights
+    c.setFont("Helvetica-Bold", 13)
+    c.drawString(2 * cm, y - 10, "AI Insights")
+    y -= 30
+    c.setFont("Helvetica", 11)
+    for line in textwrap.wrap(insights, width=100):
+        c.drawString(2 * cm, y, line)
+        y -= 16
+        if y < 4 * cm:
+            c.showPage()
+            y = height - 100
+
+    # Chart image if present
+    if chart_png:
+        try:
+            from reportlab.lib.utils import ImageReader
+            img = ImageReader(io.BytesIO(chart_png))
+            c.drawImage(img, width - 10*cm, 3*cm, 8*cm, 5*cm, preserveAspectRatio=True, mask='auto')
+        except Exception:
+            pass
+
+    # Footer
+    c.setFont("Helvetica", 9)
+    c.setFillColor(colors.grey)
+    c.drawRightString(width - 1.5*cm, 1.5*cm, "© OptiFin — Confidential • For client preview only")
+
+    c.showPage()
     c.save()
     return buf.getvalue()
 
-def build_styled_excel(user_type, inputs, advice, etf_recs=None):
-    out = io.BytesIO()
-    workbook = xlsxwriter.Workbook(out, {'in_memory': True})
-    worksheet = workbook.add_worksheet("OptiFin Report")
-    header_format = workbook.add_format({'bold': True, 'font_color': 'blue', 'font_size': 14})
-    worksheet.write('A1', LOGO + " — " + APP_NAME, header_format)
-    worksheet.write('A2', 'Client Type')
-    worksheet.write('B2', user_type)
-    row = 4
-    worksheet.write(row,0, "Inputs", workbook.add_format({'bold':True}))
-    worksheet.write(row,1, "Value", workbook.add_format({'bold':True}))
-    row += 1
-    for k,v in inputs.items():
-        worksheet.write(row,0,k)
-        try:
-            num = parse_num(v) if isinstance(v,str) else v
-            if isinstance(num, (int,float)) and not np.isnan(num):
-                worksheet.write_number(row,1, float(num))
-            else:
-                worksheet.write(row,1, str(v))
-        except:
-            worksheet.write(row,1,str(v))
-        row += 1
-    row += 1
-    worksheet.write(row,0,"AI Advice", workbook.add_format({'bold':True}))
-    worksheet.write(row,1, advice)
-    row += 2
-    if etf_recs:
-        worksheet.write(row,0,"ETF Suggestions", workbook.add_format({'bold':True}))
-        row += 1
-        for r in etf_recs:
-            worksheet.write(row,0, r.get('ticker'))
-            worksheet.write(row,1, r.get('explain',''))
-            row += 1
-    workbook.close()
-    return out.getvalue()
+def build_excel_report(title: str, inputs: Dict[str, Any], insights: str) -> bytes | None:
+    if xlsxwriter is None:
+        return None
+    output = io.BytesIO()
+    wb = xlsxwriter.Workbook(output, {'in_memory': True})
+    # Branding
+    cover = wb.add_worksheet("Cover")
+    h = wb.add_format({"bold": True, "font_size": 20, "font_color": "#0EA5E9"})
+    small = wb.add_format({"font_size": 10, "font_color": "#475569"})
+    cover.write("A1", "OptiFin — Strategy Pack", h)
+    cover.write("A3", title, wb.add_format({"bold": True, "font_size": 14}))
+    cover.write("A5", f"Generated: {dt.datetime.now().strftime('%Y-%m-%d %H:%M')}", small)
 
-# -------------------------
-# UI Pages
-# -------------------------
-def page_privacy():
-    st.markdown("<div class='translucent'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='header'>{LOGO} — {APP_NAME}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='sub'>{TAGLINE}</div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.markdown("""
-    <div class='small'>
-    <p><b>Privacy summary:</b> Your information is securely stored. By accepting, you agree we may use your inputs to generate personalised financial advice and exports. Implementation of tax or investment actions requires professional engagement. If you do not accept, you will be redirected away and your data will not be stored.</p>
-    </div>
-    """, unsafe_allow_html=True)
-    # Use form for one-click acceptance to avoid double-click issues
-    with st.form(key=key("privacy_form")):
-        accept = st.form_submit_button("Accept & Continue")
-        if accept:
-            st.session_state.privacy_accepted = True
-            st.session_state.market_snapshot = get_market_snapshot()
-            st.session_state.page = "home"
-            st.experimental_rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    ws = wb.add_worksheet("Inputs & Notes")
+    bold = wb.add_format({"bold": True, "bg_color": "#E2E8F0"})
+    ws.write("A1", "Field", bold)
+    ws.write("B1", "Value", bold)
+    r = 1
+    for k, v in inputs.items():
+        ws.write(r, 0, k)
+        ws.write(r, 1, str(v))
+        r += 1
 
-def page_home():
-    st.markdown("<div class='translucent'>", unsafe_allow_html=True)
-    st.markdown(f"<div class='header'>{LOGO} — {APP_NAME}</div>", unsafe_allow_html=True)
-    st.markdown(f"<div class='sub'>{TAGLINE}</div>", unsafe_allow_html=True)
-    st.markdown("---")
-    st.write("Market snapshot (quick):")
-    ms = st.session_state.get("market_snapshot","")
-    if not ms:
-        ms = get_market_snapshot()
-        st.session_state.market_snapshot = ms
-    st.markdown(f"**{ms}**")
-    st.markdown("---")
-    st.write("Describe your need or pick a profile below.")
-    cols = st.columns([4,1])
-    with cols[0]:
-        query = st.text_input("Tell OptiFin what you need (e.g., 'I need to lower tax and grow retirement', 'I run a small business...')", key=key("home_query"))
-    with cols[1]:
-        if st.button("Detect & Route", key=key("home_detect")):
-            q = (query or "").lower()
-            cat = "individual"
-            if any(x in q for x in ["company","business","revenue","employees","invoice","profit","vat"]):
-                cat = "business"
-            elif any(x in q for x in ["family","household","children","kids","spouse","partner"]):
-                cat = "household"
-            st.session_state.user_type = cat
-            st.session_state.page = "service"
-            st.experimental_rerun()
+    ws2 = wb.add_worksheet("Insights")
+    ws2.write("A1", "AI Insights", bold)
+    rows = textwrap.wrap(insights, width=90)
+    rr = 1
+    for line in rows:
+        ws2.write(rr, 0, line)
+        rr += 1
 
-    st.markdown("### Or select profile")
-    c1,c2,c3 = st.columns(3)
-    if c1.button("Individual", key=key("home_ind")):
-        st.session_state.user_type = "individual"; st.session_state.page = "service"; st.experimental_rerun()
-    if c2.button("Household", key=key("home_hh")):
-        st.session_state.user_type = "household"; st.session_state.page = "service"; st.experimental_rerun()
-    if c3.button("Business", key=key("home_bus")):
-        st.session_state.user_type = "business"; st.session_state.page = "service"; st.experimental_rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    wb.close()
+    return output.getvalue()
 
-def page_service():
-    st.markdown("<div class='translucent'>", unsafe_allow_html=True)
-    st.header(f"{st.session_state.user_type.capitalize()} — Choose Service")
-    svc = st.selectbox("Which service do you want?", ["Invest","Tax Optimization","Retirement & Planner","Cashflow & Budget","Full Growth Plan"], key=key("service_select"))
-    if st.button("Continue", key=key("service_continue")):
-        st.session_state.service_choice = svc
-        st.session_state.page = "questions"
-        st.experimental_rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+# ----------------------------------
+# Chart helper (small & neat)
+# ----------------------------------
+def small_line_chart(df: pd.DataFrame, y: str, height_px: int = 180):
+    # Use Streamlit's native chart for speed and minimalism
+    _ = st.line_chart(df[y], height=height_px)
 
-def page_questions():
-    st.markdown("<div class='translucent input-white'>", unsafe_allow_html=True)
-    st.header(f"{st.session_state.user_type.capitalize()} — Questions")
-    # Contact
-    st.subheader("Contact (optional)")
-    name = st.text_input("Full name", key=key("q_name"))
-    email = st.text_input("Email", key=key("q_email"))
-    phone = st.text_input("Phone", key=key("q_phone"))
+# ----------------------------------
+# AI-ish insights (no external keys required)
+# ----------------------------------
+def household_ai_insights(inputs: Dict[str, Any]) -> str:
+    inc = safe_float(inputs.get("Monthly Income (R)"))
+    exp = safe_float(inputs.get("Monthly Expenses (R)"))
+    kids = int(safe_float(inputs.get("Dependants (#)"), 0))
+    risk = inputs.get("Risk Tolerance", "Moderate")
+    invest_goal = safe_float(inputs.get("Retirement Goal (R)"))
+    invest_years = int(safe_float(inputs.get("Years to Retirement"), 25))
+    contributions = safe_float(inputs.get("Monthly Contribution (R)"))
 
-    inputs = {}
-    ut = st.session_state.user_type
-    st.markdown("---")
-    if ut == "individual":
-        st.subheader("Personal & Financial")
-        inputs["Age"] = st.number_input("Age", min_value=16, max_value=100, key=key("ind_age"))
-        inputs["Annual Income"] = st.text_input("Annual Gross Income (R)", key=key("ind_income"))
-        inputs["Monthly Investable"] = st.text_input("Monthly Investable Amount (R)", key=key("ind_monthly"))
-        inputs["Current Investable Assets"] = st.text_input("Current investable assets (R)", key=key("ind_assets"))
-        inputs["Debt (high interest)"] = st.text_input("High-interest Debt (R)", key=key("ind_debt"))
-        inputs["Risk Tolerance"] = st.selectbox("Risk Tolerance", ["Low","Moderate","High"], key=key("ind_risk"))
-        inputs["Existing Deductions"] = st.text_area("Existing deductions (brief)", key=key("ind_deds"))
-        inputs["Primary Goal"] = st.text_input("Primary goal (e.g., buy house in 5 years)", key=key("ind_goal"))
-        inputs["Retirement Target Amount"] = st.text_input("Retirement goal amount (R)", key=key("ind_ret_goal"))
-        inputs["Retirement Target Age"] = st.number_input("Retirement target age", min_value=30, max_value=100, value=65, key=key("ind_ret_age"))
-    elif ut == "household":
-        st.subheader("Household")
-        inputs["Household Income"] = st.text_input("Household Annual Income (R)", key=key("hh_income"))
-        inputs["Number of Children"] = st.number_input("Number of children", min_value=0, key=key("hh_children"))
-        inputs["Monthly Investable"] = st.text_input("Monthly investable amount (R)", key=key("hh_monthly"))
-        inputs["Existing Deductions"] = st.text_area("Existing household deductions", key=key("hh_deds"))
-        inputs["Risk Tolerance"] = st.selectbox("Risk Tolerance", ["Low","Moderate","High"], key=key("hh_risk"))
-        inputs["Retirement Target Amount"] = st.text_input("Household retirement target amount (R)", key=key("hh_ret_goal"))
-        inputs["Retirement Target Age"] = st.number_input("Household retirement age target", min_value=30, max_value=100, value=65, key=key("hh_ret_age"))
-    else:
-        st.subheader("Business")
-        inputs["Annual Revenue"] = st.text_input("Annual Revenue (R)", key=key("bus_rev"))
-        inputs["Annual Expenses"] = st.text_input("Annual Expenses (R)", key=key("bus_exp"))
-        inputs["Number of Employees"] = st.number_input("Number of employees", min_value=0, key=key("bus_emps"))
-        inputs["Business Structure"] = st.selectbox("Business Structure", ["Sole Proprietor","Private Company","Partnership","Other"], key=key("bus_struct"))
-        inputs["Owner Pay Last 12m"] = st.text_input("Owner pay last 12 months (R)", key=key("bus_ownerpay"))
-        inputs["Tax Paid Last Year"] = st.text_input("Tax paid last year (R)", key=key("bus_taxpaid"))
-        inputs["Existing Tax Strategies"] = st.text_area("Existing tax strategies (brief)", key=key("bus_taxes"))
-    st.markdown("---")
-    if st.button("Generate Advice & Results", key=key("q_submit")):
-        st.session_state.inputs = inputs
-        st.session_state.lead = {"name":name,"email":email,"phone":phone}
-        st.session_state.market_snapshot = get_market_snapshot()
-        st.session_state.page = "results"
-        st.experimental_rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
+    saved = max(0.0, inc - exp)
+    suggested = max(0.0, saved * 0.3)
+    rate = 0.06 if risk == "Conservative" else (0.08 if risk == "Moderate" else 0.11)
+    months = max(1, invest_years * 12)
+    projected = contributions * (((1 + rate/12) ** months - 1) / (rate/12))
 
-def page_results():
-    st.markdown("<div class='translucent'>", unsafe_allow_html=True)
-    ut = st.session_state.user_type
-    inputs = st.session_state.get("inputs",{})
-    market_ctx = st.session_state.get("market_snapshot","")
-    st.header(f"{ut.capitalize()} — Results & Planner")
-    if not st.session_state.advice:
-        st.session_state.advice = generate_advice(ut, inputs, market_ctx)
-    st.subheader("AI High-Level Advice")
-    st.write(st.session_state.advice)
-
-    # Retirement & Investment Planner (for individual & household)
-    st.markdown("---")
-    st.subheader("Retirement & Investment Planner")
-    # default parse values
-    if ut == "individual":
-        current_assets = parse_num(inputs.get("Current Investable Assets", 0) or inputs.get("Current investable assets",0))
-        monthly_invest = parse_num(inputs.get("Monthly Investable", 0) or inputs.get("Monthly Investable",0) or inputs.get("Monthly investable amount (R)",0))
-        goal_amount = parse_num(inputs.get("Retirement Target Amount",0) or inputs.get("Retirement target amount (R)",0))
-        target_age = int(inputs.get("Retirement Target Age", inputs.get("Retirement Target Age",65)))
-        age = int(inputs.get("Age",30))
-    elif ut == "household":
-        current_assets = parse_num(inputs.get("Current Investments",0))
-        monthly_invest = parse_num(inputs.get("Monthly Investable",0) or inputs.get("Monthly investable amount (R)",0))
-        goal_amount = parse_num(inputs.get("Retirement Target Amount",0) or inputs.get("Household retirement target amount (R)",0))
-        target_age = int(inputs.get("Retirement Target Age", inputs.get("Retirement Target Age",65)))
-        age = 35
-    else:
-        current_assets = parse_num(inputs.get("Annual Revenue",0)) * 0.05
-        monthly_invest = parse_num(inputs.get("Annual Revenue",0)) * 0.01
-        goal_amount = 0
-        target_age = 65
-        age = 40
-
-    # risk mapping
-    rt = inputs.get("Risk Tolerance","Moderate") if inputs else "Moderate"
-    rate_map = {"Low":0.04,"Moderate":0.07,"High":0.1}
-    assumed_return = rate_map.get(rt, 0.07)
-    years_to_go = max(1, target_age - age)
-    # compute required monthly contribution to reach goal (if goal > 0), else show projection charts
-    if goal_amount > 0:
-        # formula to solve monthly contribution needed (approximate, using monthly compounding)
-        initial = current_assets
-        desired = goal_amount
-        r = assumed_return / 12
-        n = years_to_go * 12
-        # monthly contribution c solving: desired = initial*(1+r)^n + c*(((1+r)^n - 1)/r)
-        if r == 0:
-            required_monthly = max(0.0, (desired - initial) / n)
+    lines = []
+    lines.append(f"Based on your budget, a suggested monthly investment is around {money(suggested)} (≈30% of surplus).")
+    lines.append(f"Given '{risk}' risk, a long-run annual return of ~{int(rate*100)}% is assumed for projections.")
+    if invest_goal > 0:
+        if projected >= invest_goal:
+            lines.append(f"At your current contributions ({money(contributions)}/mo), you are on track to meet your goal of {money(invest_goal)} in ~{invest_years} years.")
         else:
-            required_monthly = max(0.0, (desired - initial * ((1 + r) ** n)) * r / (((1 + r) ** n) - 1))
-        st.markdown(f"**Assumed annual return:** {assumed_return*100:.1f}% based on risk tolerance ({rt})")
-        st.markdown(f"**Years to target:** {years_to_go} years")
-        st.markdown(f"**Required monthly contribution to reach R{goal_amount:,.0f} by age {target_age}:** **{pretty_money(required_monthly)}**")
-        st.markdown(f"**Your current monthly contribution (entered):** {pretty_money(monthly_invest)}")
-        gap = required_monthly - monthly_invest
-        if gap > 0:
-            st.warning(f"You are R{gap:,.0f} per month short of the target. FinAI suggests increasing monthly savings or adjusting the goal/timeframe.")
-        else:
-            st.success("You are on track for the stated retirement target (based on assumed returns).")
+            gap = invest_goal - projected
+            lines.append(f"Your current trajectory could miss the target by ~{money(gap)}. Increasing monthly contributions or extending the horizon improves odds materially.")
+    if kids > 0:
+        lines.append("Consider using eligible dependants and education-related deductions/credits where lawful to reduce household tax burden.")
+    if suggested <= 0:
+        lines.append("Your expenses currently match or exceed income. Focus on trimming top 2–3 variable line items to unlock investable surplus.")
+    lines.append("Prefer low-cost diversified index funds/ETFs for core holdings; layer satellite positions (5–20%) for thematic growth aligned to your risk.")
+    lines.append("For implementation details and tailored vehicles (e.g., retirement annuities, tax-free accounts), please contact our team.")
+    return " • " + "\n • ".join(lines)
 
-    # projection mini-charts and AI insight box
-    st.markdown("---")
-    col_left, col_right = st.columns([2,1])
-    with col_left:
-        st.subheader("Projection scenarios")
-        scen_rates = {"Conservative": assumed_return-0.02, "Baseline": assumed_return, "Aggressive": assumed_return+0.03}
-        scen_values = {k: project_growth(current_assets, monthly_invest, years_to_go, r) for k,r in scen_rates.items()}
-        fig, ax = plt.subplots(figsize=(6,2.4))
-        ax.plot(list(scen_values.keys()), [scen_values[k] for k in scen_values.keys()], marker='o', linewidth=1.6)
-        ax.set_ylabel("Projected Value (R)")
-        ax.yaxis.set_major_formatter(FuncFormatter(lambda v, _: f"R {v:,.0f}"))
-        ax.grid(axis='y', linestyle='--', linewidth=0.5, alpha=0.6)
-        st.pyplot(fig, clear_figure=True)
-    with col_right:
-        st.subheader("AI Insight")
-        insight_text = ""
-        # Prepare input summary for AI/deterministic generator
-        summary = {**inputs, "Assumed annual return": f"{assumed_return*100:.1f}%", "Years to target": years_to_go}
-        if OPENAI_KEY:
+def business_ai_insights(inputs: Dict[str, Any]) -> str:
+    rev = safe_float(inputs.get("Annual Revenue (R)"))
+    exp = safe_float(inputs.get("Annual Operating Expenses (R)"))
+    emp = int(safe_float(inputs.get("Employees (#)"), 0))
+    structure = inputs.get("Business Structure", "Company")
+    capex = safe_float(inputs.get("Capex (R)"))
+    vat = inputs.get("VAT Registered", "No")
+
+    profit = max(0.0, rev - exp)
+    margin = (profit / rev * 100) if rev > 0 else 0.0
+
+    lines = []
+    lines.append(f"Operating margin approximates {margin:.1f}%. Benchmark peers to set a 12-month margin target.")
+    if capex > 0:
+        lines.append("Model accelerated allowances for qualifying capital assets to optimize taxable income timing.")
+    if emp > 0:
+        lines.append("Review payroll structuring: split taxable cash, compliant allowances, and employer benefits to reduce total tax drag while preserving net pay.")
+    if vat.lower().startswith("y"):
+        lines.append("Ensure rigorous input VAT capture across all expense lines; consider apportionment optimization where partially exempt.")
+    lines.append(f"For {structure.lower()} structures, ensure remuneration mix for owners balances dividends vs salary with relevant tax outcomes.")
+    lines.append("Consider company card spend policies for ordinary & necessary expenses—tighten policy to maximize deductibility and audit trail quality.")
+    lines.append("For implementation (entity restructure, payroll policy, capex schedules), please contact our team.")
+    return " • " + "\n • ".join(lines)
+
+# ----------------------------------
+# Market data (if yfinance available)
+# ----------------------------------
+def get_price_history(ticker: str, months: int = 6) -> pd.DataFrame | None:
+    if yf is None:
+        return None
+    try:
+        period = f"{months}mo"
+        hist = yf.Ticker(ticker).history(period=period)
+        if hist is None or hist.empty:
+            return None
+        hist = hist.rename(columns={"Close": "Price"})
+        return hist[["Price"]]
+    except Exception:
+        return None
+
+# ----------------------------------
+# Home (AI Search + Section pick)
+# ----------------------------------
+def show_home():
+    st.markdown("<div class='glass' style='margin-bottom:16px'>", unsafe_allow_html=True)
+    h2("OptiFin")
+    st.markdown("<p class='muted'>AI-assisted personal, household & corporate finance—clarity without the clutter.</p>", unsafe_allow_html=True)
+
+    q = st.text_input(
+        "Describe what you need (we'll route you):",
+        placeholder="e.g. 'Help me lower my business tax and invest excess cash' or 'Plan retirement with RA + ETF blend'",
+        key="ai_router_query",
+    )
+    colA, colB, colC = st.columns([1, 1, 1])
+    with colA:
+        if st.button("Route Me", key="btn_route", use_container_width=True):
+            if q.strip():
+                section, hint = route_from_query(q)
+                st.session_state.page = section
+                st.session_state.route_hint = hint
+                st.rerun()
+    with colB:
+        if st.button("Household & Individual", key="btn_household", use_container_width=True):
+            st.session_state.page = "household"
+            st.session_state.route_hint = None
+            st.rerun()
+    with colC:
+        if st.button("Business & Corporate", key="btn_business", use_container_width=True):
+            st.session_state.page = "business"
+            st.session_state.route_hint = None
+            st.rerun()
+    st.markdown("</div>", unsafe_allow_html=True)
+
+# ----------------------------------
+# Household Section
+# ----------------------------------
+def page_household():
+    st.markdown("<div class='glass'>", unsafe_allow_html=True)
+    h2("Household & Individual")
+    st.markdown("<p class='muted'>Answer a few questions and get a compact projection + actionable insights.</p>", unsafe_allow_html=True)
+
+    # Tool choice
+    tool = st.radio(
+        "Choose a tool",
+        ["Retirement & Investment Planner", "Tax Optimization"],
+        key="hh_tool",
+        horizontal=True,
+    )
+
+    if tool == "Retirement & Investment Planner":
+        cols = st.columns([1.2, 1])
+        with cols[0]:
+            st.subheader("Inputs")
+            c1, c2 = st.columns(2)
+            with c1:
+                income = st.number_input("Monthly Income (R)", min_value=0.0, step=100.0, key="hh_income")
+                expenses = st.number_input("Monthly Expenses (R)", min_value=0.0, step=100.0, key="hh_expenses")
+                kids = st.number_input("Dependants (#)", min_value=0, step=1, key="hh_kids")
+            with c2:
+                risk = st.selectbox("Risk Tolerance", ["Conservative", "Moderate", "Aggressive"], key="hh_risk")
+                years = st.slider("Years to Retirement", min_value=5, max_value=50, value=25, key="hh_years")
+                goal = st.number_input("Retirement Goal (R)", min_value=0.0, step=10000.0, key="hh_goal")
+
+            contrib = st.number_input("Monthly Contribution (R)", min_value=0.0, step=100.0, key="hh_contrib")
+
+            inputs = {
+                "Monthly Income (R)": income,
+                "Monthly Expenses (R)": expenses,
+                "Dependants (#)": kids,
+                "Risk Tolerance": risk,
+                "Years to Retirement": years,
+                "Retirement Goal (R)": goal,
+                "Monthly Contribution (R)": contrib,
+            }
+
+            # Projection chart (small)
+            st.markdown("<div class='chart-card'>", unsafe_allow_html=True)
+            # Simulate growth series
+            rate = 0.06 if risk == "Conservative" else (0.08 if risk == "Moderate" else 0.11)
+            months = max(1, years * 12)
+            values = []
+            running = 0.0
+            for m in range(months):
+                running = running * (1 + rate/12) + contrib
+                if m % 3 == 0:
+                    values.append(running)
+            df = pd.DataFrame({"Projected Value": values})
+            df.index = pd.date_range(end=dt.date.today() + dt.timedelta(days=months*30), periods=len(values), freq="Q")
+            st.caption("Projected Portfolio (quarterly points)")
+            small_line_chart(df.rename(columns={"Projected Value": "Projected"}), "Projected", height_px=160)
+            st.markdown("</div>", unsafe_allow_html=True)
+
+            # Buttons
+            colx, coly = st.columns(2)
+            with colx:
+                run = st.button("Generate Insights", key="hh_generate", use_container_width=True)
+            with coly:
+                export = st.button("Export PDF & Excel", key="hh_export", use_container_width=True)
+
+        with cols[1]:
+            st.subheader("AI Insights")
+            insights = household_ai_insights(inputs)
+            st.info(insights)
+            st.caption("These insights are educational—contact us for implementation details & specific instruments.")
+
+        # Exports
+        if export:
+            # Chart image (optional)
+            chart_png = None
             try:
-                prompt = f"Market snapshot: {market_ctx}\nUser type: {ut}\nInputs:\n"
-                for k,v in summary.items():
-                    prompt += f"- {k}: {v}\n"
-                prompt += ("\nYou are a senior financial advisor. Provide 4 concise recommendations focused on investments, "
-                           "retirement contributions, and tax-efficient allocations. Offer a short prioritized action list and a qualitative estimate of potential savings or gains. Do not include full implementation details; encourage contacting OptiFin.")
-                insight_text = call_gpt(prompt, max_tokens=300, temp=0.15)
+                import matplotlib.pyplot as plt
+                fig, ax = plt.subplots(figsize=(4, 2.2))
+                ax.plot(df.index, df["Projected"])
+                ax.set_title("Projected Portfolio")
+                ax.set_xlabel("")
+                ax.set_ylabel("Rands")
+                fig.tight_layout()
+                buf = io.BytesIO()
+                fig.savefig(buf, format="png", dpi=200)
+                chart_png = buf.getvalue()
+                plt.close(fig)
             except Exception:
-                insight_text = deterministic_advice(ut, inputs, market_ctx)
-        else:
-            insight_text = deterministic_advice(ut, inputs, market_ctx)
-        st.markdown(f"<div class='ai-box'>{insight_text}</div>", unsafe_allow_html=True)
+                pass
 
-    # ETF recommendations
-    st.markdown("---")
-    st.subheader("ETF Suggestions (market-aware)")
-    prof = st.selectbox("Risk profile for ETF suggestions", ["Low","Moderate","High"], index=1, key=key("etf_prof"))
-    if st.button("Compute ETF shortlist", key=key("etf_compute")):
-        with st.spinner("Computing ETF shortlist..."):
-            recs = rank_etfs(prof, limit=6)
-            st.session_state.latest_etf_recs = recs
-    recs = st.session_state.get("latest_etf_recs", [])
-    if recs:
-        for r in recs:
-            cols = st.columns([1,3,1])
-            with cols[0]:
-                # small sparkline
-                try:
-                    hist = yf.Ticker(r['ticker']).history(period="6mo", interval="1d", actions=False)
-                    if hist is not None and not hist.empty:
-                        fig, ax = plt.subplots(figsize=(2.4,1.4))
-                        ax.plot(hist.index, hist['Close'], linewidth=1)
-                        ax.set_xticks([]); ax.set_yticks([])
-                        st.pyplot(fig, clear_figure=True)
-                except Exception:
-                    pass
-            with cols[1]:
-                st.markdown(f"**{r['ticker']}** — {r.get('explain')}")
-            with cols[2]:
-                st.write("")  # placeholder
-    else:
-        st.info("No ETF shortlist computed yet — click 'Compute ETF shortlist' to run it.")
+            pdf_bytes = build_pdf_report("Household Retirement & Investment", inputs, insights, chart_png)
+            excel_bytes = build_excel_report("Household Retirement & Investment", inputs, insights)
 
-    # Exports & CTA
-    st.markdown("---")
-    left, right = st.columns([2,1])
-    with left:
-        if st.button("Download Branded PDF", key=key("dl_pdf")):
-            pdf = build_branded_pdf(ut, inputs, st.session_state.advice, st.session_state.get("latest_etf_recs",[]))
-            st.download_button("Download PDF", data=pdf, file_name=f"OptiFin_{ut}_report.pdf", key=key("download_pdf"))
-        if st.button("Download Branded Excel", key=key("dl_xlsx")):
-            xlsx = build_styled_excel(ut, inputs, st.session_state.advice, st.session_state.get("latest_etf_recs",[]))
-            st.download_button("Download Excel", data=xlsx, file_name=f"OptiFin_{ut}_report.xlsx", key=key("download_xlsx"))
-    with right:
-        st.markdown("<div class='ai-box'><b>Need implementation?</b><br>Contact OptiFin to implement the plan & capture the savings. We build the models and handle compliance.</div>", unsafe_allow_html=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                if pdf_bytes:
+                    st.download_button("Download PDF", data=pdf_bytes, file_name="OptiFin_Household_Report.pdf", mime="application/pdf", key="dl_hh_pdf")
+                else:
+                    st.warning("PDF generator not available (install reportlab).")
+            with c2:
+                if excel_bytes:
+                    st.download_button("Download Excel", data=excel_bytes, file_name="OptiFin_Household_Report.xlsx", key="dl_hh_xlsx")
+                else:
+                    st.warning("Excel generator not available (install xlsxwriter).")
 
-    st.markdown("</div>", unsafe_allow_html=True)
-
-# -------------------------
-# Router / main app
-# -------------------------
-def main():
-    # sidebar navigation
-    st.sidebar.markdown(f"### {APP_NAME}")
-    nav_choice = st.sidebar.radio("Navigate", ["Home","Service","Questions","Results"], index=0, key=key("nav"))
-    # translate radio to page only when user chooses
-    if nav_choice == "Home": st.session_state.page = "home"
-    elif nav_choice == "Service": st.session_state.page = "service"
-    elif nav_choice == "Questions": st.session_state.page = "questions"
-    elif nav_choice == "Results": st.session_state.page = "results"
-
-    # Ensure privacy accepted first
-    if not st.session_state.privacy_accepted and st.session_state.page != "privacy":
-        st.session_state.page = "privacy"
-
-    if st.session_state.page == "privacy":
-        page_privacy()
-    elif st.session_state.page == "home":
-        page_home()
-    elif st.session_state.page == "service":
-        page_service()
-    elif st.session_state.page == "questions":
-        page_questions()
-    elif st.session_state.page == "results":
-        page_results()
-    else:
-        page_home()
-
-if __name__ == "__main__":
-    main()
+    elif tool == "Tax Optimization":
+        st.subheader("Household Tax Review")
+        c1, c2 = st.columns(2)
+        with c1:
+            annual_income = st.number_input("Annual Taxable Income (R)", min_value=0.0, step=1000.0, key="ht_income")
+            deductions = st.number_input("Known Deductions (R)", min_value=0.0, step=1000.0, key="ht_deductions")
+            dependants = st.number_input("Dependants (#)", min_value=0, step
