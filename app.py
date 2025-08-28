@@ -2547,6 +2547,46 @@ def main_router():
 # If you want, call main_router() here or in your existing code
 if __name__ == "__main__":
     main_router()
+import streamlit as st
+
+# Dictionary for tracking widget count for unique keys
+_widget_key_counts = {}
+
+def unique_key_button(label, **kwargs):
+    """
+    Wrapper function for st.button that assigns unique keys automatically.
+    """
+    if label not in _widget_key_counts:
+        _widget_key_counts[label] = 0
+    count = _widget_key_counts[label]
+    _widget_key_counts[label] += 1
+    key = kwargs.get('key', f"{label}_key_{count}")
+    return st.button(label, key=key, **{k:v for k,v in kwargs.items() if k != 'key'})
+
+def safe_experimental_rerun():
+    """
+    Call st.experimental_rerun() once per run safely to prevent rerun loops.
+    """
+    if not st.session_state.get('_has_rerun_done', False):
+        st.session_state['_has_rerun_done'] = True
+        st.experimental_rerun()
+
+# Example: Replace your button calls like this in your code:
+
+# Old:
+# if st.button("I Accept"):
+#    # do something
+
+# New:
+# if unique_key_button("I Accept"):
+#     # do something
+#     safe_experimental_rerun()
+
+# Similarly for other buttons:
+# if unique_key_button("Individual"):
+#    # ...
+
+
 
 
 
