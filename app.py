@@ -2462,4 +2462,32 @@ def track_user_event(user_id, event_name, properties=None):
 
 # Usage example in your Streamlit app:
 track_user_event('user123', 'Page Viewed', {'page': 'Dashboard'})
+# Example fixes you should do throughout your app for all widgets that generate duplicates.
+# Replace existing widgets like this:
+
+# Old (error prone if duplicated):
+# if st.button("I Accept"):
+#    ...
+
+# New (with unique key):
+if st.button("I Accept", key="privacy_accept_button"):
+    # your acceptance logic here
+    pass
+
+# Another example for segment hub:
+if st.button("Individual", key="segment_hub_individual_btn"):
+    # your logic here
+    pass
+
+# If you have buttons inside loops, use loop index or unique identifiers:
+for i in range(num_items):
+    if st.button(f"Delete item {i}", key=f"delete_item_btn_{i}"):
+        # delete logic
+        pass
+
+# Similarly for other widgets like text_input, checkbox etc:
+user_input = st.text_input("Enter name", key="unique_text_input_key_123")
+
+# Add keys to all buttons, checkboxes, sliders, selects to ensure uniqueness
+
 
