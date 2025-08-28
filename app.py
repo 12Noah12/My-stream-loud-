@@ -2585,6 +2585,48 @@ def safe_experimental_rerun():
 # Similarly for other buttons:
 # if unique_key_button("Individual"):
 #    # ...
+import streamlit as st
+
+# Track counts of widgets with the same label
+_widget_counter = {}
+
+def safe_button(label, **kwargs):
+    """
+    Replacement for st.button() that guarantees unique keys to avoid DuplicateElementId error.
+    """
+    key = kwargs.get("key")
+    if key is None:
+        count = _widget_counter.get(label, 0)
+        key = f"{label}_{count}"
+        _widget_counter[label] = count + 1
+    return st.button(label, key=key, **{k: v for k, v in kwargs.items() if k != "key"})
+
+# Usage: Replace all st.button("label") with safe_button("label")
+# Example: if safe_button("I Accept"):  ...
+
+# Similarly, you can write safe_text_input, safe_checkbox etc., if needed:
+def safe_text_input(label, **kwargs):
+    key = kwargs.get("key")
+    if key is None:
+        count = _widget_counter.get(label, 0)
+        key = f"{label}_{count}"
+        _widget_counter[label] = count + 1
+    return st.text_input(label, key=key, **{k: v for k, v in kwargs.items() if k != "key"})
+
+def safe_checkbox(label, **kwargs):
+    key = kwargs.get("key")
+    if key is None:
+        count = _widget_counter.get(label, 0)
+        key = f"{label}_{count}"
+        _widget_counter[label] = count + 1
+    return st.checkbox(label, key=key, **{k: v for k, v in kwargs.items() if k != "key"})
+
+# If you want to fix your rerun calls safely, use:
+def safe_rerun():
+    if not st.session_state.get("_rerun_done", False):
+        st.session_state["_rerun_done"] = True
+        st.experimental_rerun()
+
 
 
 
