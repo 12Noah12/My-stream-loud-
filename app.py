@@ -2489,5 +2489,64 @@ for i in range(num_items):
 user_input = st.text_input("Enter name", key="unique_text_input_key_123")
 
 # Add keys to all buttons, checkboxes, sliders, selects to ensure uniqueness
+import streamlit as st
+
+# Dictionary to track usage count of each widget label for unique keys
+_widget_key_counters = {}
+
+def unique_key_button(label, **kwargs):
+    """
+    Wrapper for st.button that assigns a unique key automatically
+    based on label and usage count to avoid DuplicateElementId errors.
+    """
+    count = _widget_key_counters.get(label, 0)
+    key = kwargs.get("key", f"{label}_{count}")
+    _widget_key_counters[label] = count + 1
+    return st.button(label, key=key, **{k:v for k,v in kwargs.items() if k != "key"})
+
+def safe_experimental_rerun():
+    """
+    Call st.experimental_rerun() safely to avoid repeated rerun loops
+    causing duplicate widget problems.
+    """
+    if not st.session_state.get("_has_rerun", False):
+        st.session_state._has_rerun = True
+        st.experimental_rerun()
+
+# Usage Example replacements:
+# Replace `if st.button("I Accept"):` with `if unique_key_button("I Accept"):` etc.
+
+# --- Patch your main_router or whichever function calls buttons ---
+
+# Example wrapping page functions to use unique keys
+def page_privacy_gate():
+    st.title("Privacy Agreement")
+    if unique_key_button("I Accept"):
+        st.session_state["privacy_accepted"] = True
+        safe_experimental_rerun()
+
+def page_segment_hub():
+    st.title("Segment Hub")
+    if unique_key_button("Individual"):
+        st.write("Individual selected")
+        safe_experimental_rerun()
+    if unique_key_button("Business"):
+        st.write("Business selected")
+        safe_experimental_rerun()
+
+# Make sure your main_router calls these updated functions
+def main_router():
+    page = st.session_state.get("page", "privacy_gate")
+    if page == "privacy_gate":
+        page_privacy_gate()
+    elif page == "segment_hub":
+        page_segment_hub()
+    else:
+        st.write(f"Page {page} not found")
+
+# If you want, call main_router() here or in your existing code
+if __name__ == "__main__":
+    main_router()
+
 
 
