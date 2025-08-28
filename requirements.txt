@@ -15,3 +15,34 @@ requests
 gspread
 google-auth
 yfinance
+streamlit>=1.24.0
+pandas>=1.5.0
+numpy>=1.23.0
+plotly>=5.10.0
+openai>=0.27.0
+stripe>=6.0.1
+python-dotenv>=1.0.0
+matplotlib>=3.7.0
+Pillow>=10.0.0
+xlsxwriter>=3.1.2
+reportlab>=3.6.15
+fpdf>=1.7.2
+openpyxl>=3.1.2
+requests>=2.28.2
+gspread>=5.7.2
+google-auth>=2.17.3
+yfinance>=0.2.18
+cachetools>=5.3.0       # optional for improved caching
+bcrypt>=4.0.1          # optional for advanced password hashing (if upgrading from hashlib)
+pyyaml>=6.0            # often useful for config files / secrets parsing
+gunicorn>=20.1.0       # for production server hosting
+uvicorn>=0.23.1        # fast ASGI server, if needed
+pytest>=7.3.1
+flake8>=6.0.0
+cachetools>=5.3.0
+bcrypt>=4.0.1
+pyyaml>=6.0
+gunicorn>=20.1.0
+uvicorn>=0.23.1
+pytest>=7.3.1
+flake8>=6.0.0
