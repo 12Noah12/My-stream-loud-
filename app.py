@@ -2451,3 +2451,15 @@ if __name__ == "__main__":
     init_state()
     init_auth_state()
     main_router()
+import analytics  # Import Segment SDK
+
+analytics.write_key = 'YOUR_SEGMENT_WRITE_KEY'  # Replace with your real key
+
+def track_user_event(user_id, event_name, properties=None):
+    if properties is None:
+        properties = {}
+    analytics.track(user_id, event_name, properties)
+
+# Usage example in your Streamlit app:
+track_user_event('user123', 'Page Viewed', {'page': 'Dashboard'})
+
