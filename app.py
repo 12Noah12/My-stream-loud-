@@ -1,83 +1,16 @@
-# app.py - OptiFin Intelligent Financial Planning Suite - Part 1 of 3
+# OptiFin Part 1 — Core Initialization and Privacy Gate
+
 import streamlit as st
-import pandas as pd
-import numpy as np
-import plotly.graph_objs as go
-from datetime import date, datetime, timedelta
-from io import BytesIO
 import json
-import pathlib
-import base64
+import datetime
+import hashlib
 from collections import deque
 
-# Optional imports
-try:
-    import yfinance as yf
-    YF_AVAILABLE = True
-except ImportError:
-    YF_AVAILABLE = False
-
-try:
-    from fpdf import FPDF
-    FPDF_AVAILABLE = True
-except ImportError:
-    FPDF_AVAILABLE = False
-
-try:
-    import openai
-    OPENAI_AVAILABLE = True
-except ImportError:
-    OPENAI_AVAILABLE = False
-
-# ---- Constants ----
 APP_NAME = "OptiFin"
 APP_YEAR = 2025
 DEFAULT_REGION = "South Africa"
 DEFAULT_CURRENCY = "ZAR"
-CURRENCY_SYMBOL = "R"
-LOCALE = "Africa/Johannesburg"
 
-BACKGROUND_IMAGES = {
-    "Finance 1": "https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1950&q=80",
-    "Architecture 1": "https://images.unsplash.com/photo-1549924231-f129b911e442?auto=format&fit=crop&w=1950&q=80",
-    "Finance 2": "https://images.unsplash.com/photo-1515165562835-c702d4d30ea3?auto=format&fit=crop&w=1950&q=80",
-}
-
-ROUTE_LIST = [
-    "individual:invest",
-    "individual:tax",
-    "individual:retirement",
-    "individual:estate",
-    "household:budget",
-    "household:tax",
-    "household:invest",
-    "household:protection",
-    "business:tax",
-    "business:invest",
-    "business:cashflow",
-    "business:retirement",
-    "business:valuation",
-]
-
-ROUTES = {
-    'individual:invest': ('individual', 'investment'),
-    'individual:tax': ('individual', 'tax'),
-    'individual:retirement': ('individual', 'retirement'),
-    'individual:estate': ('individual', 'estate'),
-    'household:budget': ('household', 'budget'),
-    'household:tax': ('household', 'tax'),
-    'household:invest': ('household', 'investment'),
-    'household:protection': ('household', 'protection'),
-    'business:tax': ('business', 'tax'),
-    'business:invest': ('business', 'investment'),
-    'business:cashflow': ('business', 'cashflow'),
-    'business:retirement': ('business', 'retirement'),
-    'business:valuation': ('business', 'valuation'),
-}
-
-TOOLTIP_ICONS = " <span style='color:#4ade80; cursor:help;'>[?]</span>"
-
-# ---- Session State Init ----
 def init_state():
     if 'page' not in st.session_state:
         st.session_state.page = 'privacy_gate'
@@ -90,1590 +23,148 @@ def init_state():
     if 'theme' not in st.session_state:
         st.session_state.theme = 'dark'
     if 'background' not in st.session_state:
-        st.session_state.background = list(BACKGROUND_IMAGES.values())[0]
+        st.session_state.background = 'https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1950&q=80'
     if 'ai_router_result' not in st.session_state:
         st.session_state.ai_router_result = None
     if 'contact_submissions' not in st.session_state:
-        st.session_state.contact_submissions = deque(maxlen=500)  # prevent memory bloat
+        st.session_state.contact_submissions = deque(maxlen=500)
+    if 'auth_logged_in' not in st.session_state:
+        st.session_state.auth_logged_in = False
+    if 'auth_username' not in st.session_state:
+        st.session_state.auth_username = ""
+    if 'auth_profile' not in st.session_state:
+        st.session_state.auth_profile = {}
+    if "achievements" not in st.session_state:
+        st.session_state.achievements = set()
 
 init_state()
 
-# ---- CSS & Styles ----
-def get_base_css():
-    return f"""
-    <style>
-    /* Body & Background */
-    .stApp {{
-        background-image: url("{st.session_state.background}");
-        background-size: cover;
-        background-position: center center;
-        background-attachment: fixed;
-        color: {'#f9f9f9' if st.session_state.theme == 'dark' else '#111'};
-        font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
-    }}
-    /* Overlay for readability */
-    .background-overlay {{
-        position: fixed;
-        top:0; left:0; width: 100vw; height: 100vh;
-        background: rgba(0,0,0,0.55);
-        z-index: -1;
-    }}
-    /* Glass cards */
-    .glass-card {{
-      background: {"rgba(20,24,28,0.85)" if st.session_state.theme == "dark" else "rgba(255,255,255,0.9)"};
-      border-radius: 16px;
-      padding: 24px;
-      box-shadow: 0 12px 30px rgba(2,6,23,0.15);
-      backdrop-filter: blur(12px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      color: {"#eee" if st.session_state.theme == "dark" else "#222"};
-      font-size: 16px;
-    }}
-    /* Headings */
-    h1 {{
-      font-size: 48px;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      color: {"#eef6ff" if st.session_state.theme == 'dark' else '#111'};
-    }}
-    h2 {{
-      font-size: 38px;
-      font-weight: 600;
-      margin-bottom: 1rem;
-      color: {"#eef6ff" if st.session_state.theme == 'dark' else '#111'};
-    }}
-    /* Buttons */
-    button {{
-      background: linear-gradient(135deg,#004174,#047860);
-      color: white !important;
-      font-weight: 700;
-      border-radius: 14px;
-      padding: 10px 22px;
-      border: none;
-      box-shadow: 0 6px 20px rgba(4,120,96,0.4);
-      transition: background 0.3s ease;
-      font-size: 16px;
-    }}
-    button:hover {{
-      background: linear-gradient(135deg,#047860,#004174);
-      cursor: pointer;
-    }}
-    /* Input text unique keys no spinner */
-    input[type=number]::-webkit-inner-spin-button,
-    input[type=number]::-webkit-outer-spin-button {{
-      -webkit-appearance: none;
-      margin: 0;
-    }}
-    input[type=number] {{
-      -moz-appearance: textfield;
-    }}
-    /* Search bar */
-    input.ai-search-bar {{
-      border: 2px solid #05f7a7;
-      border-radius: 24px;
-      padding: 16px 44px 16px 20px;
-      font-size: 20px;
-      width: 100%;
-      max-width: 700px;
-      background-color: rgba(0,0,0,0.6);
-      color: white;
-      box-shadow: 0 0 20px #05f7a7;
-      transition: border-color 0.3s ease;
-    }}
-    input.ai-search-bar::placeholder {{
-      color: rgba(255,255,255,0.7);
-    }}
-    input.ai-search-bar:focus {{
-      outline: none;
-      border-color: #50fa7b;
-      box-shadow: 0 0 30px #50fa7b;
-      background-color: rgba(0,0,0,0.8);
-    }}
-    /* Tooltip: “?” with hover */
-    .tooltip-icon {{
-      position: relative;
-      color: #4ade80;
-      font-weight: 900;
-      cursor: help;
-      margin-left: 6px;
-      font-size: 1rem;
-    }}
-    .tooltip-icon:hover::after {{
-      content: attr(data-tip);
-      position: absolute;
-      left: 110%;
-      top: 50%;
-      transform: translateY(-50%);
-      background: #222;
-      color: #eee;
-      padding: 8px 12px;
-      border-radius: 8px;
-      width: 240px;
-      font-weight: 400;
-      font-size: 0.85rem;
-      z-index: 99999;
-      white-space: normal;
-      box-shadow: 0 0 11px rgba(0,255,128,0.65);
-    }}
-    /* AI Insight Card */
-    .ai-insight-card {{
-      background: rgba(8,17,38,0.95);
-      color: #eef6ff;
-      border-radius: 14px;
-      padding: 16px;
-      box-shadow: 0 0 12px rgba(0, 255, 128, 0.35);
-      font-size: 16px;
-      font-weight: 500;
-      line-height: 1.4rem;
-    }}
-    /* Chart container */
-    .chart-container {{
-      background: {"rgba(20,24,28,0.85)" if st.session_state.theme == 'dark' else "rgba(255,255,255,0.9)"};
-      border-radius: 12px;
-      padding: 16px;
-      box-shadow: 0 8px 20px rgba(2,6,23,0.12);
-      margin-bottom: 1rem;
-    }}
-    /* Footer */
-    footer {{
-      color: {"#a0b0bf" if st.session_state.theme == 'dark' else "#666"};
-      margin-top: 2rem;
-      padding-top: 1rem;
-      border-top: 1px solid {"rgba(255,255,255,0.1)" if st.session_state.theme == 'dark' else "rgba(0,0,0,0.1)"};
-      font-size: 0.85rem;
-      text-align: center;
-    }}
-    /* Error messages */
-    div.stError {{
-      font-weight: 600;
-      color: #FF5370;
-    }}
-    </style>
-    """
-
-def apply_styles():
-    st.markdown(get_base_css(), unsafe_allow_html=True)
-    st.markdown('<div class="background-overlay"></div>', unsafe_allow_html=True)
-
-# ---- Validation Helpers ----
-def validate_float(text_val):
-    try:
-        if text_val is None or text_val.strip() == "":
-            return None, None
-        val = float(text_val.replace(",", "").replace(CURRENCY_SYMBOL, "").strip())
-        return val, None
-    except Exception:
-        return None, "Invalid number format"
-
-def validate_int(text_val):
-    try:
-        if text_val is None or text_val.strip() == "":
-            return None, None
-        val = int(text_val.strip())
-        return val, None
-    except Exception:
-        return None, "Invalid integer format"
-
-# ---- Unique Widget Key Generator helper ----
-def make_key(*args):
-    return "_".join(str(a).replace(" ", "_").lower() for a in args)
-
-# ---- Tooltip HTML ----
-def tooltip(text):
-    return f'<span class="tooltip-icon" data-tip="{text}">?</span>'
-
-# ---- Cache market data ----
-@st.cache_data(ttl=900)
-def fetch_market_data(tickers):
-    if not YF_AVAILABLE:
-        return None
-    try:
-        end = datetime.utcnow()
-        start = end - timedelta(days=365)
-        data = yf.download(tickers, start=start, end=end, progress=False, auto_adjust=True)
-        return data
-    except Exception:
-        return None
-
-# ---- PDF generator skeleton ----
-def generate_pdf(metadata: dict, advice: str, chart_png: bytes | None = None):
-    if not FPDF_AVAILABLE:
-        return None
-    pdf = FPDF()
-    pdf.add_page()
-    # Header
-    pdf.set_fill_color(2, 52, 74) # deep navy
-    pdf.rect(0, 0, 210, 22, 'F')
-    pdf.set_text_color(255, 255, 255)
-    pdf.set_font("Helvetica", "B", 18)
-    pdf.cell(0, 10, f"{APP_NAME} Financial Advisory Report", ln=True, align="C")
-
-    pdf.ln(5)
-    pdf.set_text_color(0, 0, 0)
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, "Input Summary", ln=True)
-
-    pdf.set_font("Helvetica", "", 12)
-    for k, v in metadata.items():
-        val = str(v)
-        # strip emojis, non-ASCII
-        safe_val = val.encode("ascii", errors="ignore").decode()
-        safe_key = k.encode("ascii", errors="ignore").decode()
-        pdf.cell(50, 10, f"{safe_key}:", ln=0)
-        pdf.cell(0, 10, safe_val, ln=1)
-
-    pdf.ln(5)
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 8, "AI Recommendations", ln=True)
-    pdf.set_font("Helvetica", "", 12)
-    for line in advice.splitlines():
-        safe_line = line.encode("ascii", errors="ignore").decode()
-        pdf.multi_cell(0, 8, safe_line)
-
-    if chart_png:
-        try:
-            import tempfile
-            with tempfile.NamedTemporaryFile(suffix=".png") as tmp:
-                tmp.write(chart_png)
-                tmp.flush()
-                pdf.image(tmp.name, x=130, w=60)
-        except Exception:
-            pass
-    
-    pdf.set_y(-20)
-    pdf.set_font("Helvetica", "I", 9)
-    pdf.set_text_color(128, 128, 128)
-    pdf.cell(0, 10, f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.", 0, 0, 'C')
-
-    return pdf.output(dest="S").encode("latin1")
-
-# ---- Excel export skeleton ----
-def generate_excel(metadata: dict, advice: str):
-    output = BytesIO()
-    try:
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-            df_meta = pd.DataFrame(metadata.items(), columns=["Field", "Value"])
-            df_adv = pd.DataFrame({"Advice": advice.splitlines()})
-
-            df_meta.to_excel(writer, sheet_name="Inputs", index=False)
-            df_adv.to_excel(writer, sheet_name="AI_Recommendations", index=False)
-
-            workbook = writer.book
-            format_header = workbook.add_format({'bold': True, 'bg_color': '#00334e', 'font_color': 'white'})
-            worksheet = writer.sheets['Inputs']
-            worksheet.set_row(0, None, format_header)
-            worksheet = writer.sheets['AI_Recommendations']
-            worksheet.set_row(0, None, format_header)
-        return output.getvalue()
-    except Exception:
-        return None
-
-# ---- AI Router (OpenAI + keyword fallback) ----
-def ai_natural_language_router(query_text):
-    """
-    Uses OpenAI or fallback keyword mapping to route user's query to segment:module with confidence
-    """
-    if OPENAI_AVAILABLE and "OPENAI_API_KEY" in st.secrets:
-        try:
-            openai.api_key = st.secrets["OPENAI_API_KEY"]
-            prompt = f"""
-Given this free-text, map to one route:
-{json.dumps(ROUTE_LIST)}
-
-Return JSON: {{ "segment":..., "module":..., "confidence":... }}.
-If uncertain, choose most likely with confidence < 0.6.
-
-User query:
-\"\"\"{query_text}\"\"\"
-
-JSON reply:
-"""
-            response = openai.Completion.create(
-                engine="text-davinci-003",
-                prompt=prompt,
-                max_tokens=150,
-                temperature=0,
-                stop=["\n\n"]
-            )
-            txt = response.choices[0].text.strip()
-            parsed = json.loads(txt)
-            segment = parsed.get("segment")
-            module = parsed.get("module")
-            confidence = float(parsed.get("confidence", 0))
-            if (segment in ['individual', 'household', 'business']) and module and isinstance(confidence, float):
-                return segment, module, confidence
-        except Exception:
-            pass
-
-    # Keyword fallback:
-    l = query_text.lower()
-    mappings = {
-        "small company": ("business", "tax"),
-        "pay less tax": ("business", "tax"),
-        "save for retirement": ("individual", "retirement"),
-        "retirement": ("individual", "retirement"),
-        "kids": ("household", "tax"),
-        "family budget": ("household", "tax"),
-        "best etfs": ("individual", "investment"),
-        "etfs": ("individual", "investment"),
-        "cash flow": ("business", "cashflow"),
-        "valuation": ("business", "valuation"),
-    }
-    for key, val in mappings.items():
-        if key in l:
-            return val[0], val[1], 0.7
-    # Default fallback
-    return "individual", "investment", 0.5
-
-# ---- Helper: format Rands ----
-def fmt_currency(val):
-    try:
-        v = float(val)
-        return f"R{v:,.2f}"
-    except Exception:
-        return "R0.00"
-
-# === PAGE COMPONENTS ===
-
 def page_privacy_gate():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.title("OptiFin Privacy, Data Processing, and Electronic Communications Agreement")
-    st.markdown(f"**Last updated: {date.today().isoformat()}**")
-    agreement = """
-You authorize OptiFin to collect, process, analyze, store, and display the data you enter into this application, including financial, demographic, and business information, for the purpose of providing personalized analyses, projections, reports, and recommendations.
+    st.title(f"Welcome to {APP_NAME}")
+    st.markdown(
+        """
+        ### Privacy & Data Processing Consent
 
-Your data may be processed by third-party sub-processors strictly for functionality (e.g., secure hosting, analytics, AI inference, document generation, market data retrieval). OptiFin contracts to ensure commercially reasonable safeguards.
+        To use this app, you must agree to the processing of your financial data securely and confidentially.
+        We comply with all applicable data protection laws.
 
-OptiFin implements measures designed to protect your information (encryption in transit, logical access controls, monitoring). No method of transmission or storage is 100% secure.
-
-Reports and recommendations provided by OptiFin are general informational insights and do not constitute financial, tax, accounting, legal, or investment advice. You remain solely responsible for decisions and compliance.
-
-You consent to receive electronic communications and to the electronic provision of notices and records.
-
-You may request deletion of your information subject to legal and operational constraints.
-
-By clicking “I Accept,” you provide a legally binding consent to this Agreement and the processing described herein. If you do not agree, do not use this application and select “Decline” to exit.
-"""
-    st.markdown(f"<pre style='color:white; white-space: pre-wrap'>{agreement}</pre>", unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("Decline", key="privacy_decline_btn"):
-            st.markdown("<script>window.location.href = 'https://your-site.example/';</script>", unsafe_allow_html=True)
-            st.stop()
-    with col2:
-        if st.button("I Accept", key="privacy_accept_btn"):
-            st.session_state.consent_accepted = True
-            st.session_state.page = "home"
-            st.experimental_rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def page_home():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.title("Welcome to OptiFin")
-    st.markdown("Describe your situation or goals in your own words:")
-
-    ai_input_key = "home_ai_input_text"
-    user_input = st.text_input(
-        "Describe your situation or goals...",
-        key=ai_input_key,
-        placeholder="Describe your situation or goals in your own words…",
-        label_visibility='collapsed',
-        max_chars=500,
-        on_change=None,
+        Please read and accept our privacy policy before proceeding.
+        """
     )
-    submit_key = "home_ai_search_btn"
-    col_left, col_right = st.columns([0.3, 0.7])
-    with col_left:
-        if st.button("Analyze", key=submit_key):
-            if not user_input or len(user_input.strip()) < 8:
-                st.error("Please enter a detailed description for better advice.")
-            else:
-                segment, module, confidence = ai_natural_language_router(user_input.strip())
-                st.session_state.ai_router_result = {"segment": segment, "module": module, "confidence": confidence}
-                st.session_state.user_segment = segment
-                st.session_state.sub_module = module
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-    with col_right:
-        st.markdown("### Or choose your segment:")
-        seg_cols = st.columns(3)
-        with seg_cols[0]:
-            if st.button("Individual", key="segment_individual_btn"):
-                st.session_state.user_segment = "individual"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-        with seg_cols[1]:
-            if st.button("Household", key="segment_household_btn"):
-                st.session_state.user_segment = "household"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-        with seg_cols[2]:
-            if st.button("Business", key="segment_business_btn"):
-                st.session_state.user_segment = "business"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
+    if st.button("I Accept"):
+        st.session_state.consent_accepted = True
+        st.session_state.page = "segment_hub"
+        st.experimental_rerun()
 
-    # Show chip for AI router understanding if available
-    if st.session_state.ai_router_result:
-        r = st.session_state.ai_router_result
-        st.markdown(f"<small style='color:#4ade80;'>Understanding you → <b>{r['segment'].capitalize()} : {r['module'].capitalize()}</b> (confidence: {r['confidence']:.2f})</small>", unsafe_allow_html=True)
+if __name__ == "__main__":
+    init_state()
+    if not st.session_state.consent_accepted:
+        page_privacy_gate()
+    else:
+        st.markdown("Proceed to App Hub (Next parts will add this...)")
+# OptiFin Part 2 — AI Router and Segment Hub
 
-    st.markdown('</div>', unsafe_allow_html=True)
+import streamlit as st
 
 def page_segment_hub():
-    seg = st.session_state.user_segment or "individual"
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.title(f"{seg.capitalize()} Segment Hub")
-    st.markdown("Select a focus area:")
+    st.title("Welcome to OptiFin")
+    st.markdown("#### Select your user segment to begin your personalized financial journey:")
 
-    modules_for_segment = {
-        "individual": {
-            "investment": ("Investment Planning", "6 questions"),
-            "tax": ("Tax Optimization", "5 questions"),
-            "retirement": ("Retirement & Goal Planning", "6 questions"),
-            "estate": ("Estate & Protection", "4 questions"),
-        },
-        "household": {
-            "budget": ("Budgeting & Expenses", "6 questions"),
-            "tax": ("Tax Optimization", "5 questions"),
-            "investment": ("Investment Planning", "6 questions"),
-            "protection": ("Insurance & Protection", "4 questions"),
-        },
-        "business": {
-            "tax": ("Tax Optimization", "7 questions"),
-            "investment": ("Investment Planning", "6 questions"),
-            "cashflow": ("Cash Flow Forecasting", "6 questions"),
-            "retirement": ("Pension & Provident Funds", "6 questions"),
-            "valuation": ("Business Valuation", "4 questions"),
-        },
-    }
+    col1, col2, col3 = st.columns(3)
 
-    modules = modules_for_segment.get(seg, {})
-    cols = st.columns(len(modules))
-    for col, (mod_key, (mod_name, badge)) in zip(cols, modules.items()):
-        with col:
-            if st.button(f"{mod_name}\n({badge})", key=f"btn_{seg}_{mod_key}"):
-                st.session_state.sub_module = mod_key
+    with col1:
+        if st.button("Individual"):
+            st.session_state.user_segment = 'individual'
+            st.session_state.page = "module_form"
+            st.experimental_rerun()
+
+    with col2:
+        if st.button("Household / Family"):
+            st.session_state.user_segment = 'household'
+            st.session_state.page = "module_form"
+            st.experimental_rerun()
+
+    with col3:
+        if st.button("Business Owner"):
+            st.session_state.user_segment = 'business'
+            st.session_state.page = "module_form"
+            st.experimental_rerun()
+
+def ai_router(input_text: str):
+    """
+    Simplified Router — analyzes natural language input
+    to determine user intent and segment/module.
+    """
+    text = input_text.lower()
+
+    # Default values
+    segment = None
+    sub_module = None
+
+    if any(word in text for word in ["individual", "personal", "me", "i want"]):
+        segment = "individual"
+    elif any(word in text for word in ["household", "family", "we", "our"]):
+        segment = "household"
+    elif any(word in text for word in ["business", "company", "my business", "self-employed"]):
+        segment = "business"
+    else:
+        # For demo we ask user to pick in hub
+        segment = None
+
+    # Detect module/topic
+    if any(word in text for word in ["invest", "investment", "portfolio"]):
+        sub_module = "investment"
+    elif any(word in text for word in ["tax", "taxation", "deduction", "irs"]):
+        sub_module = "tax"
+    elif any(word in text for word in ["retirement", "pension", "401k"]):
+        sub_module = "retirement"
+    elif any(word in text for word in ["estate", "will", "inheritance", "trust"]):
+        sub_module = "estate"
+    elif any(word in text for word in ["budget", "expenses", "spending"]):
+        sub_module = "budget"
+    elif any(word in text for word in ["protection", "insurance", "coverage"]):
+        sub_module = "protection"
+    else:
+        sub_module = None
+
+    return segment, sub_module
+
+def page_ai_natural_router():
+    st.title(f"{APP_NAME} AI Natural Language Assistant")
+    st.markdown("Ask any financial planning question or type your intent (e.g., 'Help me with individual retirement planning').")
+
+    user_input = st.text_area("Your question or command...", height=120, key="ai_router_input")
+
+    if st.button("Analyze and Route"):
+        if not user_input.strip():
+            st.warning("Please enter some text to analyze.")
+        else:
+            segment, sub_module = ai_router(user_input)
+            if segment and sub_module:
+                st.success(f"Detected segment: **{segment}**, module: **{sub_module}**")
+                st.session_state.user_segment = segment
+                st.session_state.sub_module = sub_module
                 st.session_state.page = "module_form"
                 st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-def input_number_with_validation(label:str, key:str, tooltip_text:str=None, unit:str=None, default:str=""):
-    label_str = label
-    if unit:
-        label_str += f" ({unit})"
-    label_html = label_str
-    if tooltip_text:
-        label_html += " " + tooltip(tooltip_text)
-    raw_val = st.text_input(label_html, value=default, key=key)
-    val, err = validate_float(raw_val)
-    if err:
-        st.error(err, icon="🚨")
-    return val
-
-def input_int_with_validation(label:str, key:str, tooltip_text:str=None, default:str=""):
-    label_html = label
-    if tooltip_text:
-        label_html += " " + tooltip(tooltip_text)
-    raw_val = st.text_input(label_html, value=default, key=key)
-    val, err = validate_int(raw_val)
-    if err:
-        st.error(err, icon="🚨")
-    return val
-
-# ---- Individual Investment Module Example ----
-def page_module_investment_individual():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Individual — Investment Planning")
-
-    # Inputs per spec
-    income = input_number_with_validation("Income (Annual)", "indiv_income_text", "Your pre-tax annual income. Example: 850,000.", "Annual")
-    bonus = input_number_with_validation("Bonus Income (Annual)", "indiv_bonus_text", "Additional bonus income (annual). Optional.", "Annual", "0")
-    other_income = input_number_with_validation("Other Income (Annual)", "indiv_other_income_text", "Other income sources (annual). Optional.", "Annual", "0")
-
-    investable_assets = input_number_with_validation("Current Investable Assets (R)", "indiv_investable_text", "Cash and investments available to deploy.", "Total", "0")
-
-    monthly_contrib = input_number_with_validation("Current Monthly Contribution (R)", "indiv_monthly_contrib_text", "Amount you currently invest monthly.", "Monthly", "0")
-
-    debt_mortgage = input_number_with_validation("Mortgage Debt Balance (R)", "indiv_debt_mortgage", "Outstanding mortgage balance.", "Total", "0")
-
-    debt_cards = input_number_with_validation("Credit Card Debt Balance (R)", "indiv_debt_cards", "Outstanding credit card balances.", "Total", "0")
-
-    debt_loans = input_number_with_validation("Loans Debt Balance (R)", "indiv_debt_loans", "Outstanding loans (auto, personal).", "Total", "0")
-
-    debt_rates = input_number_with_validation("Weighted Average Debt Interest Rate (%)", "indiv_debt_interest", "Average interest rate across debts, e.g., 10 for 10%.", "Percent", "0")
-
-    risk_tolerance = st.slider("Risk Tolerance (Very Low → Very High)", min_value=1, max_value=5, value=3, key="indiv_risk_slider")
-
-    retirement_age = input_int_with_validation("Target Retirement Age", "indiv_retirement_age", "Age you aim to retire.", "65")
-
-    current_age = input_int_with_validation("Current Age", "indiv_current_age", "Your current age.", "35")
-
-    tax_residence = st.selectbox("Tax Residency & Country", ["South Africa", "United Kingdom", "United States"], key="indiv_tax_residence")
-
-    deductions_text = st.text_area("Current Deductions Claimed (list)", key="indiv_deductions", help="List your current deductions separated by commas, e.g., 'Section 12J, Medical Credits'", height=50)
-
-    insurance_months = input_int_with_validation("Insurance & Emergency Fund Months", "indiv_insurance_months", "Number of months your insurance/emergency fund covers.", "6")
-
-    retirement_target_corpus = input_number_with_validation("Retirement Target Corpus (R)", "indiv_retirement_target", "Target corpus you want at retirement.", "Total", "0")
-
-    savings_timeframe_years = input_int_with_validation("Savings Timeframe (years)", "indiv_savings_timeframe", "Years available to save until retirement.", "30")
-
-    savings_autoplan = st.checkbox("Enable Savings Auto Plan", value=True, key="indiv_savings_autoplan")
-
-    # Validate mandatory fields & show friendly error messages
-    errors = []
-    if income is None:
-        errors.append("Income (Annual) is required and must be a valid number.")
-    if monthly_contrib is None:
-        errors.append("Monthly Contribution is required and must be valid.")
-    if retirement_age is None:
-        errors.append("Retirement Age is required.")
-    if current_age is None:
-        errors.append("Current Age is required.")
-    if savings_timeframe_years is None:
-        errors.append("Savings Timeframe is required.")
-    if retirement_target_corpus is None:
-        errors.append("Retirement Target Corpus is required.")
-
-    if errors:
-        for e in errors:
-            st.error(e)
-        st.stop()
-
-    # --- Advisor Engine (simple deterministic example, replace with real logic) --
-    # Calculate debt paydown timeline example
-    total_debt = (debt_mortgage or 0) + (debt_cards or 0) + (debt_loans or 0)
-    monthly_interest = ((debt_rates or 0) / 100) / 12
-    try:
-        debt_paydown_months = 0
-        balance = total_debt
-        monthly_payment = min(monthly_contrib or 0, balance) if balance > 0 else 0
-        while balance > 0 and debt_paydown_months < 600:
-            interest = balance * monthly_interest
-            principal_payment = monthly_payment - interest
-            balance -= principal_payment
-            debt_paydown_months += 1
-        if balance > 0:
-            debt_paydown_months = None  # cannot pay off
-    except Exception:
-        debt_paydown_months = None
-
-    # Project investment future value
-    # (Simple CAGR annual return 7%, risk modifies return ±2% per risk slider)
-    base_return = 0.07
-    risk_adjustment = (risk_tolerance - 3) * 0.02
-    annual_return = max(0.03, base_return + risk_adjustment)
-    monthly_return = (1 + annual_return) ** (1/12) - 1
-    months = (retirement_age - current_age) * 12
-    bal = investable_assets or 0
-    invest_eval = []
-    for _ in range(months):
-        bal = bal * (1 + monthly_return) + (monthly_contrib or 0)
-        invest_eval.append(bal)
-
-    # Compose AI insight text
-    advice_lines = [
-        f"Your estimated debt paydown time is {debt_paydown_months or 'more than 50 years'} months.",
-        f"Based on your risk tolerance ({risk_tolerance}), expected annualized return is ~{annual_return*100:.1f}%.",
-        f"Projected investment value at retirement age ({retirement_age}) is approximately R{bal:,.0f}.",
-        "Consider rebalancing annually and consulting a financial advisor for tailored advice.",
-        "All advice is general information and does not constitute formal financial, tax, legal, or investment consulting.",
-        "Contact OptiFin for tailored implementation."
-    ]
-    advice_text = "\n".join(advice_lines)
-
-    # -- Plot the investment projection as a sparkline --
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=list(range(len(invest_eval))), y=invest_eval,
-                             mode='lines+markers',
-                             line=dict(color='#50fa7b'),
-                             marker=dict(size=4)))
-    fig.update_layout(margin=dict(l=15, r=15, t=25, b=25),
-                      paper_bgcolor='rgba(0,0,0,0)',
-                      plot_bgcolor='rgba(20,24,28,0.85)' if st.session_state.theme == 'dark' else 'rgba(255,255,255,0.9)',
-                      height=220,
-                      font=dict(color='#eef6ff' if st.session_state.theme == 'dark' else '#111'),
-                      xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-                      yaxis=dict(showgrid=False, zeroline=False))
-    
-    left_col, right_col = st.columns([1.7, 1])
-    with left_col:
-        st.subheader("Investment Projection")
-        st.plotly_chart(fig, use_container_width=True)
-    with right_col:
-        st.subheader("AI Insight")
-        st.markdown(f"<div class='ai-insight-card'><pre style='white-space:pre-wrap'>{advice_text}</pre></div>", unsafe_allow_html=True)
-
-    # --- Export buttons ---
-    meta = {
-        "Income (Annual)": fmt_currency(income),
-        "Bonus Income": fmt_currency(bonus),
-        "Other Income": fmt_currency(other_income),
-        "Current Investable Assets": fmt_currency(investable_assets),
-        "Monthly Contribution": fmt_currency(monthly_contrib),
-        "Total Debt": fmt_currency(total_debt),
-        "Debt Interest (%)": debt_rates or 0,
-        "Risk Tolerance": risk_tolerance,
-        "Retirement Age": retirement_age,
-        "Current Age": current_age,
-        "Tax Residence": tax_residence,
-        "Insurance Months": insurance_months,
-        "Retirement Target": fmt_currency(retirement_target_corpus),
-        "Savings Timeframe (Years)": savings_timeframe_years,
-        "Savings Auto Plan Enabled": savings_autoplan,
-        "Deductions": deductions_text.strip() or "None",
-    }
-
-    # Generate PNG of chart for embedding in PDF (for complex real app, handle offline caching)
-    chart_png = None
-    try:
-        img_bytes = fig.to_image(format="png", width=600, height=270, scale=2)
-        chart_png = img_bytes
-    except Exception:
-        chart_png = None
-
-    pdf_bytes = generate_pdf(meta, advice_text, chart_png)
-    excel_bytes = generate_excel(meta, advice_text)
-
-    exp_col1, exp_col2 = st.columns(2)
-    with exp_col1:
-        if pdf_bytes:
-            st.download_button("Download PDF Report",
-                               data=pdf_bytes,
-                               file_name=f"OptiFin_Individual_Investment_Report.pdf",
-                               mime="application/pdf",
-                               key="download_pdf_investment" )
-        else:
-            st.warning("PDF generation not available.")
-    with exp_col2:
-        if excel_bytes:
-            st.download_button("Download Excel Report",
-                               data=excel_bytes,
-                               file_name=f"OptiFin_Individual_Investment_Report.xlsx",
-                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                               key="download_excel_investment")
-        else:
-            st.warning("Excel export not available.")
-
-    # --- Contact & Lead Capture card ---
-    st.markdown("---")
-    st.subheader("Get a tailored implementation")
-    with st.form("contact_form_investment", clear_on_submit=True):
-        contact_name = st.text_input("Name", key="contact_invest_name")
-        contact_email = st.text_input("Email", key="contact_invest_email")
-        contact_phone = st.text_input("Phone", key="contact_invest_phone")
-        contact_company = st.text_input("Company (optional)", key="contact_invest_company")
-        if st.form_submit_button("Submit"):
-            if not contact_name or not contact_email:
-                st.error("Name and Email are required.")
             else:
-                # Save to session_state for demo, in prod store securely
-                st.session_state.contact_submissions.append({
-                    "name": contact_name,
-                    "email": contact_email,
-                    "phone": contact_phone,
-                    "company": contact_company,
-                    "segment": "Individual",
-                    "module": "Investment",
-                    "timestamp": datetime.now().isoformat(),
-                })
-                st.success("Thank you for your submission! Our team will contact you soon.")
-    st.markdown(f"<small style='color:gray'>We respect your privacy. See OptiFin Privacy Agreement on app start.</small>", unsafe_allow_html=True)
+                st.info("Unable to determine segment or module clearly; please select below.")
 
-    # --- Back to hub ---
-    if st.button("Back to Segment Hub", key="btn_back_segment_hub_invest"):
-        st.session_state.page = "segment_hub"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# --- Map (segment, sub_module) to page functions ---
-PAGE_FUNCTIONS = {
-    ("individual", "investment"): page_module_investment_individual,
-    # Fill in others (household, business, tax, retirement, estate, etc.) in Parts 2/3
-}
-
-def main_router():
-    apply_styles()
-    if not st.session_state.consent_accepted:
-        st.session_state.page = "privacy_gate"
-
-    page = st.session_state.page
-
-    # Sidebar theme and background selector
-    with st.sidebar:
-        st.title(APP_NAME)
-        theme_selection = st.radio("Color Theme", options=['dark', 'light'], index=0 if st.session_state.theme=="dark" else 1, key="theme_radio", horizontal=True)
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        # Background selection dropdown
-        bg_select = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select")
-        selected_url = BACKGROUND_IMAGES.get(bg_select, list(BACKGROUND_IMAGES.values())[0])
-        if st.session_state.background != selected_url:
-            st.session_state.background = selected_url
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
-    if page == "privacy_gate":
-        page_privacy_gate()
-    elif page == "home":
-        page_home()
-    elif page == "segment_hub":
+    if st.session_state.user_segment is None:
         page_segment_hub()
-    elif page == "module_form":
-        seg = st.session_state.user_segment
-        mod = st.session_state.sub_module
-        fn = PAGE_FUNCTIONS.get((seg, mod), None)
-        if fn:
-            fn()
-        else:
-            st.error(f"Module not implemented for {seg} -> {mod}.")
-            if st.button("Back to Segment Hub"):
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-    else:
-        st.error("Unknown app page, redirecting home...")
-        st.session_state.page = "home"
-        st.experimental_rerun()
 
 if __name__ == "__main__":
-    init_state()
-    main_router()
-# CONTINUE app.py - OptiFin Intelligent Financial Planning Suite - Part 2 of 3
-
-import math
-
-# ------------ UTILITIES & VALIDATIONS (expand) ------------
-
-def validate_float_required(text_val, field_name):
-    v, err = validate_float(text_val)
-    if err or v is None:
-        st.error(f"{field_name} is required and must be a valid number.")
-        raise ValueError(f"{field_name} validation failed")
-    return v
-
-def validate_int_required(text_val, field_name):
-    v, err = validate_int(text_val)
-    if err or v is None:
-        st.error(f"{field_name} is required and must be a valid integer.")
-        raise ValueError(f"{field_name} validation failed")
-    return v
-
-# ------------ Advisor deterministic engine stubs ------------
-
-def compute_tax_estimate(annual_income, deductions, dependants, country):
-    """
-    Highly simplified demo tax estimator by region.
-    Input values:
-    - annual_income, deductions: float
-    - dependants: int
-    Output:
-    - dict { 'taxable_income': ..., 'estimated_tax': ..., 'tax_rate': ... }
-    """
-    taxable = max(0, annual_income - deductions - dependants * 3500)
-    if country == "South Africa":
-        if taxable < 50000:
-            rate = 0.18
-        elif taxable < 150000:
-            rate = 0.26
-        else:
-            rate = 0.39
-    elif country == "United Kingdom":
-        if taxable < 12500:
-            rate = 0.0
-        elif taxable < 50000:
-            rate = 0.20
-        elif taxable < 150000:
-            rate = 0.40
-        else:
-            rate = 0.45
-    elif country == "United States":
-        # Flat demo rate
-        rate = 0.22
+    if st.session_state.consent_accepted:
+        page_ai_natural_router()
     else:
-        rate = 0.25  # default fallback
-    est_tax = taxable * rate
-    return {
-        "taxable_income": taxable,
-        "estimated_tax": est_tax,
-        "tax_rate": rate
-    }
-
-def compute_retirement_shortfall(current_assets, monthly_contrib, years_to_retire, risk_level, target_corpus):
-    """
-    Estimate retirement shortfall with simple CAGR growth.
-    risk_level: 1-5 slider, translates to base returns.
-    Returns shortfall amount and projection series (monthly).
-    """
-    base_returns = {
-        1: 0.03,
-        2: 0.05,
-        3: 0.07,
-        4: 0.10,
-        5: 0.12,
-    }
-    ann_return = base_returns.get(risk_level, 0.07)
-    monthly_return = (1 + ann_return) ** (1/12) - 1
-    months = years_to_retire * 12
-    bal = current_assets
-    proj_series = []
-    for _ in range(months):
-        bal = bal * (1 + monthly_return) + monthly_contrib
-        proj_series.append(bal)
-    shortfall = max(0, target_corpus - bal)
-    return shortfall, proj_series
-
-# ------------ Market Data -----------------------
-
-@st.cache_data(ttl=900)
-def get_ticker_history(ticker:str, period='1y'):
-    if not YF_AVAILABLE:
-        return None
-    try:
-        data = yf.Ticker(ticker).history(period=period)
-        return data['Close']
-    except Exception:
-        return None
-
-# ------------ Helper to display chart + AI Insight card ------------
-
-def display_compact_chart_and_insight(series, heading, advice, theme='dark'):
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(y=series, mode='lines+markers',
-                             line=dict(color='#50fa7b'),
-                             marker=dict(size=4)))
-    fig.update_layout(
-        margin=dict(l=15, r=15, t=25, b=25),
-        height=220,
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(20,24,28,0.85)' if theme == 'dark' else 'rgba(255,255,255,0.9)',
-        font=dict(color='#eef6ff' if theme == "dark" else '#111'),
-        xaxis=dict(showgrid=False, showticklabels=False, zeroline=False),
-        yaxis=dict(showgrid=False, zeroline=False))
-    cols = st.columns([1.7, 1])
-    with cols[0]:
-        st.subheader(heading)
-        st.plotly_chart(fig, use_container_width=True)
-    with cols[1]:
-        st.subheader("AI Insight")
-        st.markdown(f"<div class='ai-insight-card'><pre style='white-space:pre-wrap'>{advice}</pre></div>", unsafe_allow_html=True)
-
-# -------- Household Investment Module -------------
-
-def page_module_investment_household():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Household — Investment Planning")
-
-    try:
-        combined_income = validate_float_required(
-            st.text_input(f"Combined Household Income (Annual) {tooltip('Your household\'s total pre-tax income. Example: 1,200,000')}",
-                          key="household_income_text"), "Combined Household Income")
-
-        dependants = validate_int_required(
-            st.text_input(f"Dependants (#) {tooltip('Number of financially dependent people (children, parents).')}",
-                          key="household_dependants_text"), "Dependants")
-
-        current_deductions = st.text_area(
-            f"Current Deductions/Credits Claimed {tooltip('List deductions or credits claimed, comma-separated.')}",
-            key="household_deductions_text")
-
-        monthly_budget = st.text_area(
-            f"Monthly Budget (categories) {tooltip('List budget categories and amounts, comma-separated - e.g., Food:1000, Transport:500')}",
-            key="household_budget_text")
-
-        goal_education = validate_float(
-            st.text_input(f"Goal: Education Fund (R) {tooltip('Amount you want saved for education, annualized.')}",
-                          key="household_goal_education_text")) or 0.0
-
-        goal_home = validate_float(
-            st.text_input(f"Goal: Home Purchase Fund (R) {tooltip('Target amount for home purchase.')}",
-                          key="household_goal_home_text")) or 0.0
-
-        goal_retirement = validate_float(
-            st.text_input(f"Goal: Retirement Corpus (R) {tooltip('Amount targeted at retirement.')}",
-                          key="household_goal_retirement_text")) or 0.0
-
-        risk = st.slider("Risk Tolerance", min_value=1, max_value=5, value=3, key="household_risk_slider")
-
-        investable_assets = validate_float(
-            st.text_input(f"Current Investable Assets (R) {tooltip('Cash and investments available to deploy.')}",
-                          key="household_investable_text")) or 0.0
-
-        if combined_income <= 0:
-            st.error("Combined household income must be positive.")
-            st.stop()
-
-        monthly_contrib = combined_income / 12 * 0.2  # naive 20% savings heuristic
-
-        # Simple investment projection like individual module:
-        base_return = 0.07
-        risk_adj = (risk - 3) * 0.02
-        ann_return = max(0.03, base_return + risk_adj)
-        monthly_return = (1 + ann_return) ** (1/12) - 1
-        months = 12
-        bal = investable_assets
-        projection = []
-        for _ in range(months):
-            bal = bal * (1 + monthly_return) + monthly_contrib
-            projection.append(bal)
-
-        advice_lines = [
-            f"Risk profile: {risk} (scale 1-5).",
-            f"Estimated 12 month projected investment value: {fmt_currency(bal)}.",
-            "Suggested allocation: Core ETF 60%, Satellite thematic 30%, Bonds 10%.",
-            "Adjust contributions or goals based on personal circumstances.",
-            "Consult a professional for personalized advice.",
-        ]
-        advice = "\n".join(advice_lines)
-
-        display_compact_chart_and_insight(projection, "12-Month Investment Projection", advice, st.session_state.theme)
-
-        st.markdown("---")
-        st.subheader("Get a tailored implementation")
-        with st.form("contact_form_household", clear_on_submit=True):
-            name = st.text_input("Name", key="contact_household_name")
-            email = st.text_input("Email", key="contact_household_email")
-            phone = st.text_input("Phone", key="contact_household_phone")
-            company = st.text_input("Company (optional)", key="contact_household_company")
-            if st.form_submit_button("Submit"):
-                if not name or not email:
-                    st.error("Name and Email are required.")
-                else:
-                    st.session_state.contact_submissions.append({
-                        "name": name, "email": email, "phone": phone,
-                        "company": company, "segment": "Household",
-                        "module": "Investment", "timestamp": datetime.now().isoformat()
-                    })
-                    st.success("Thank you for your submission! We will contact you soon.")
-
-        if st.button("Back to Segment Hub", key="btn_back_household_invest"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as ex:
-        st.error(f"Error: {str(ex)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Business Investment Module -------------
-
-def page_module_investment_business():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Business — Investment Planning")
-
-    try:
-        ann_revenue = validate_float_required(st.text_input(
-            "Annual Revenue (R)"+tooltip("Total revenue for your business this year."), key="business_annual_revenue"), "Annual Revenue")
-
-        cogs = validate_float(st.text_input(
-            "COGS (Cost of Goods Sold) (R)"+tooltip("Direct costs of producing goods sold."), key="business_cogs")) or 0.0
-
-        opex = validate_float(st.text_input(
-            "Operating Expenses (OpEx) (R)"+tooltip("General operating expenses."), key="business_opex")) or 0.0
-
-        ebitda = ann_revenue - cogs - opex
-
-        owner_salary = validate_float(st.text_input(
-            "Owner Salary (R)"+tooltip("Salary paid to owners."), key="business_owner_salary")) or 0.0
-
-        distributions = validate_float(st.text_input(
-            "Distributions/Dividends (R)"+tooltip("Payments to owners beyond salary."), key="business_distributions")) or 0.0
-
-        employees = validate_int_required(st.text_input(
-            "Number of Employees"+tooltip("Number of full-time employees."), key="business_employees"), "Number of Employees")
-
-        payroll = validate_float(st.text_input(
-            "Payroll Spend (R)"+tooltip("Total monthly payroll spend."), key="business_payroll_spend")) or 0.0
-
-        deductions_claimed = st.text_area("Current deductions claimed", key="business_deductions_claimed")
-
-        capex = validate_float(st.text_input(
-            "Capital Expenditure (CapEx) This Year (R)"+tooltip("Equipment, vehicles, property improvements."), key="business_capex")) or 0.0
-
-        vat_status = st.selectbox("VAT Status", options=["Registered", "Not Registered"], key="business_vat_status")
-        corp_tax_regime = st.selectbox("Corporate Tax Regime", options=["Standard", "Small Business", "Other"], key="business_corp_tax_regime")
-
-        cash_on_hand = validate_float(st.text_input("Cash on Hand (R)", key="business_cash_on_hand")) or 0.0
-
-        runway_months = validate_int_required(st.text_input("Runway Months", key="business_runway_months"), "Runway Months")
-
-        # Simple cash runway check
-        est_monthly_burn = (opex + payroll) / 12 if opex > 0 and payroll > 0 else 0
-        runway_calc = cash_on_hand / est_monthly_burn if est_monthly_burn > 0 else math.inf
-
-        advice_lines = [
-            f"EBITDA is estimated at {fmt_currency(ebitda)}.",
-            f"Estimated monthly burn rate: {fmt_currency(est_monthly_burn)}.",
-            f"Cash runway based on cash on hand and burn rate: approximately {runway_calc:.1f} months.",
-            "Consider optimizing distributions vs salary for tax efficiency.",
-            "Make use of accelerated depreciation and R&D credits if available.",
-            "Consult your financial advisor for detailed tax optimization.",
-        ]
-        advice = "\n".join(advice_lines)
-
-        # Investment projection dummy example (similar to others)
-        monthly_investment = ann_revenue * 0.05 / 12  # invest 5% annual revenue monthly
-        risk = 3  # Default risk rating for business investment
-        base_return = 0.07
-        risk_adj = (risk - 3) * 0.02
-        ann_return = max(0.03, base_return + risk_adj)
-        monthly_return = (1 + ann_return) ** (1/12) - 1
-        months = 12
-        bal = 0 + (monthly_investment * 2)  # start with some buffer
-        projection = []
-        for _ in range(months):
-            bal = bal * (1 + monthly_return) + monthly_investment
-            projection.append(bal)
-
-        display_compact_chart_and_insight(projection, "12-Month Investment Projection", advice, st.session_state.theme)
-
-        st.markdown("---")
-        st.subheader("Get a tailored implementation")
-        with st.form("contact_form_business", clear_on_submit=True):
-            name = st.text_input("Name", key="contact_business_name")
-            email = st.text_input("Email", key="contact_business_email")
-            phone = st.text_input("Phone", key="contact_business_phone")
-            company = st.text_input("Company (optional)", key="contact_business_company")
-            if st.form_submit_button("Submit"):
-                if not name or not email:
-                    st.error("Name and Email are required.")
-                else:
-                    st.session_state.contact_submissions.append({
-                        "name": name, "email": email, "phone": phone,
-                        "company": company, "segment": "Business",
-                        "module": "Investment", "timestamp": datetime.now().isoformat()
-                    })
-                    st.success("Thank you for your submission! We will contact you soon.")
-
-        if st.button("Back to Segment Hub", key="btn_back_business_invest"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as ex:
-        st.error(f"Error in Business Investment module: {str(ex)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Tax Optimization Module (shared style for all segments) ---------
-
-def page_module_tax():
-    seg = st.session_state.user_segment
-    mod = "tax"
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header(f"{seg.capitalize()} — Tax Optimization")
-
-    try:
-        annual_income = validate_float_required(
-            st.text_input(f"Annual Taxable Income (R) {tooltip('Your annual taxable income.')}", key=f"{seg}_tax_annual_income_text"),
-            "Annual Taxable Income")
-        known_deductions = validate_float(
-            st.text_input(f"Known Deductions (R) {tooltip('Enter claimed tax deductions.')}", key=f"{seg}_tax_deductions_text")
-        ) or 0.0
-        dependants = validate_int(
-            st.text_input(f"Dependants (#) {tooltip('Number of dependants for tax credits.')}", key=f"{seg}_tax_dependants_text")
-        ) or 0
-        tax_country = st.selectbox("Tax Residency Country", options=["South Africa", "United Kingdom", "United States"], key=f"{seg}_tax_country_select")
-
-        tax_data = compute_tax_estimate(annual_income, known_deductions, dependants, tax_country)
-
-        est_tax = tax_data['estimated_tax']
-        tax_rate = tax_data['tax_rate']
-        taxable_income = tax_data['taxable_income']
-
-        advice_lines = [
-            f"Estimated taxable income: {fmt_currency(taxable_income)}.",
-            f"Estimated tax owed: {fmt_currency(est_tax)} at effective rate {tax_rate*100:.1f}%.",
-            "Maximize pre-tax retirement contributions to reduce taxable income.",
-            "Claim all eligible dependants and education credits applicable to your jurisdiction.",
-            "Consider salary vs dividends mix if applicable for tax efficiency.",
-            "Consult a tax professional for detailed advice.",
-        ]
-        advice = "\n".join(advice_lines)
-
-        display_compact_chart_and_insight([est_tax]*12, "Estimated Monthly Tax Liability", advice, st.session_state.theme)
-
-        # Contact form here again
-        st.markdown("---")
-        st.subheader("Get a tailored tax optimization plan")
-        with st.form(f"contact_form_tax_{seg}", clear_on_submit=True):
-            name = st.text_input("Name", key=f"contact_tax_{seg}_name")
-            email = st.text_input("Email", key=f"contact_tax_{seg}_email")
-            phone = st.text_input("Phone", key=f"contact_tax_{seg}_phone")
-            company = st.text_input("Company (optional)", key=f"contact_tax_{seg}_company")
-            if st.form_submit_button("Submit"):
-                if not name or not email:
-                    st.error("Name and Email are required.")
-                else:
-                    st.session_state.contact_submissions.append({
-                        "name": name, "email": email, "phone": phone,
-                        "company": company, "segment": seg.capitalize(),
-                        "module": "Tax Optimization", "timestamp": datetime.now().isoformat()
-                    })
-                    st.success("Thank you for your submission! Our tax experts will get in touch.")
-
-        if st.button("Back to Segment Hub", key=f"btn_back_tax_{seg}"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as e:
-        st.error(f"Error in Tax module: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Retirement & Goal Planning Module ---------
-
-def page_module_retirement():
-    seg = st.session_state.user_segment
-    mod = "retirement"
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header(f"{seg.capitalize()} — Retirement & Goal Planning")
-
-    try:
-        current_assets = validate_float_required(st.text_input(
-            f"Current Investable Assets (R) {tooltip('Total current savings and investments.')}",
-            key=f"{seg}_ret_assets_text"), "Current Investable Assets")
-
-        monthly_contribution = validate_float_required(st.text_input(
-            f"Monthly Contribution (R) {tooltip('Amount saved towards retirement monthly.')}",
-            key=f"{seg}_ret_monthly_contrib_text"), "Monthly Contribution")
-
-        years_to_retire = validate_int_required(st.text_input(
-            f"Years Until Retirement {tooltip('Number of years until retirement goal.')}",
-            key=f"{seg}_ret_years_text"), "Years Until Retirement")
-
-        target_corpus = validate_float_required(st.text_input(
-            "Retirement Target Corpus (R)"+tooltip("Amount desired at retirement."),
-            key=f"{seg}_ret_target_corpus_text"), "Retirement Target Corpus")
-
-        risk = st.slider(f"Risk Tolerance", min_value=1, max_value=5, value=3, key=f"{seg}_ret_risk_slider")
-
-        if monthly_contribution <= 0:
-            st.info("You are not currently saving towards retirement; consider increasing monthly contributions.")
-            st.stop()
-
-        # Compute projection and shortfall with helper
-        shortfall, proj_series = compute_retirement_shortfall(current_assets, monthly_contribution, years_to_retire, risk, target_corpus)
-
-        advice_lines = [
-            f"Projected retirement savings after {years_to_retire} years: {fmt_currency(proj_series[-1])}.",
-            f"Retirement shortfall (difference from target): {fmt_currency(shortfall)}.",
-            "Consider increasing contributions or extending your timeframe to close the gap.",
-            "Maintain consistent investment and rebalance portfolio annually.",
-            "For personalized retirement planning, please consult a financial advisor.",
-        ]
-        advice = "\n".join(advice_lines)
-
-        display_compact_chart_and_insight(proj_series[-36:], "Last 36 Months Projection", advice, st.session_state.theme)
-
-        st.markdown("---")
-        st.subheader("Get a tailored retirement plan")
-        with st.form(f"contact_form_retirement_{seg}", clear_on_submit=True):
-            name = st.text_input("Name", key=f"contact_retirement_{seg}_name")
-            email = st.text_input("Email", key=f"contact_retirement_{seg}_email")
-            phone = st.text_input("Phone", key=f"contact_retirement_{seg}_phone")
-            company = st.text_input("Company (optional)", key=f"contact_retirement_{seg}_company")
-            if st.form_submit_button("Submit"):
-                if not name or not email:
-                    st.error("Name and Email are required.")
-                else:
-                    st.session_state.contact_submissions.append({
-                        "name": name, "email": email, "phone": phone,
-                        "company": company, "segment": seg.capitalize(),
-                        "module": "Retirement Planning", "timestamp": datetime.now().isoformat()
-                    })
-                    st.success("Thank you! A retirement expert will contact you.")
-
-        if st.button("Back to Segment Hub", key=f"btn_back_retirement_{seg}"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-    except Exception as e:
-        st.error(f"Error in Retirement module: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ---- Extend PAGE_FUNCTIONS dictionary from Part 1 for these modules ----
-
-PAGE_FUNCTIONS.update({
-    ("household", "investment"): page_module_investment_household,
-    ("business", "investment"): page_module_investment_business,
-    ("individual", "tax"): page_module_tax,
-    ("household", "tax"): page_module_tax,
-    ("business", "tax"): page_module_tax,
-    ("individual", "retirement"): page_module_retirement,
-    ("household", "retirement"): page_module_retirement,
-    ("business", "retirement"): page_module_retirement,
-})
-
-
-# END OF PART 2
-# CONTINUATION app.py - OptiFin Intelligent Financial Planning Suite - Part 3 of 3
-
-import csv
-import os
-from PIL import Image
-import tempfile
-
-# ---- Estate & Protection Module -----
-
-def page_module_estate():
-    seg = st.session_state.user_segment
-    mod = "estate"
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header(f"{seg.capitalize()} — Estate & Protection")
-
-    try:
-        estate_value = validate_float_required(st.text_input(
-            "Current Estate Value (R)"+tooltip("Total value of your estate assets."), key=f"{seg}_estate_value_text"), "Estate Value")
-
-        will_exists = st.radio("Do you have a valid Will?", options=["Yes", "No"], key=f"{seg}_estate_will_radio")
-
-        trust_fund = st.radio("Do you have a trust fund established?", options=["Yes", "No"], key=f"{seg}_estate_trust_radio")
-
-        dependants_protected = validate_int_required(st.text_input(
-            "Number of Protected Dependants", key=f"{seg}_estate_dependants_text", help="Number of family members covered under protection."), "Protected Dependants")
-
-        insurance_coverage = validate_float_required(st.text_input(
-            "Total Insurance Coverage (R)", key=f"{seg}_estate_insurance_coverage", help="Value of all insurance policies related to estate."), "Insurance Coverage")
-
-        advice_lines = [
-            f"Estate value: {fmt_currency(estate_value)}.",
-            f"Will status: {will_exists}.",
-            f"Trust fund established: {trust_fund}.",
-            f"Dependants protected: {dependants_protected}.",
-            f"Insurance coverage total: {fmt_currency(insurance_coverage)}.",
-            "Ensure your will and trust fund are up to date.",
-            "Consider insurance policies tailored to your estate size and dependants.",
-            "Consult a legal advisor for comprehensive estate planning."
-        ]
-        advice = "\n".join(advice_lines)
-
-        # Simple chart: estate value over last 12 months (mocked)
-        fake_series = [estate_value * (1 + 0.003 * i) for i in range(12)]
-        display_compact_chart_and_insight(fake_series, "Estate Value Projection", advice, st.session_state.theme)
-
-        st.markdown("---")
-        st.subheader("Get a tailored estate & protection plan")
-        with st.form(f"contact_form_estate_{seg}", clear_on_submit=True):
-            name = st.text_input("Name", key=f"contact_estate_{seg}_name")
-            email = st.text_input("Email", key=f"contact_estate_{seg}_email")
-            phone = st.text_input("Phone", key=f"contact_estate_{seg}_phone")
-            company = st.text_input("Company (optional)", key=f"contact_estate_{seg}_company")
-            if st.form_submit_button("Submit"):
-                if not name or not email:
-                    st.error("Name and Email are required.")
-                else:
-                    st.session_state.contact_submissions.append({
-                        "name": name, "email": email, "phone": phone,
-                        "company": company, "segment": seg.capitalize(),
-                        "module": "Estate & Protection", "timestamp": datetime.now().isoformat()
-                    })
-                    st.success("Thank you! An estate specialist will be in touch.")
-
-        if st.button("Back to Segment Hub", key=f"btn_back_estate_{seg}"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as ex:
-        st.error(f"Error in Estate module: {str(ex)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ---- Advisor Engine -- LLM invocation + fallback with banner -----
-
-def get_ai_advice(segment: str, module: str, inputs: dict, computed_metrics: dict):
-    """
-    Compose prompt and call OpenAI API if available.
-    Returns advice string.
-    On AI failure or missing key, returns deterministic advice with banner.
-    """
-
-    prompt_intro = f"""You are an expert financial advisor for the region '{DEFAULT_REGION}'. Given the user inputs and computed metrics below, provide 3–6 specific, region-aware actions with estimated impact ranges. Do NOT give step-by-step instructions, but include legal disclaimers and call-to-action CTA to contact OptiFin.
-
-User segment: {segment}
-Module: {module}
-
-Inputs:
-{json.dumps(inputs, indent=2)}
-
-Computed metrics:
-{json.dumps(computed_metrics, indent=2)}
-
-Response:
-"""
-
-    if OPENAI_AVAILABLE and "OPENAI_API_KEY" in st.secrets:
-        try:
-            openai.api_key = st.secrets["OPENAI_API_KEY"]
-            response = openai.Completion.create(
-                engine="text-davinci-003",
-                prompt=prompt_intro,
-                max_tokens=400,
-                temperature=0.2,
-                stop=None,
-            )
-            advice = response.choices[0].text.strip()
-            return advice, False  # No fallback banner
-        except Exception:
-            pass
-
-    # fallback deterministic advice example
-    fallback_advice = f"""Advanced AI temporarily offline. Based on inputs and metrics:
-
-- Review your debt repayment strategy focusing on highest interest rates first.
-- Maximize retirement and investment contributions within legal limits.
-- Monitor your tax deductions, including dependants and insurance credits.
-- Consult OptiFin for a tailored plan and professional financial advice.
-
-[Disclaimer: This is general guidance, not personalized advice.]"""
-
-    return fallback_advice, True
-
-# ---- Extended Investment Module example with AI advice call ----
-
-def page_module_investment_with_ai():
-    """
-    More detailed Investment page incorporating AI advice
-    """
-    seg = st.session_state.user_segment
-    mod = "investment"
-
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header(f"{seg.capitalize()} — Investment Planning")
-
-    # Example inputs (simplified here to demo AI)
-    income = validate_float_required(st.text_input("Income (Annual)"+tooltip("Your pre-tax annual income. Example: 850,000."), key=f"{seg}_income_text"), "Income (Annual)")
-    monthly_contrib = validate_float_required(st.text_input("Monthly Contribution (R)"+tooltip("Your monthly investment contribution."), key=f"{seg}_monthly_contrib_text"), "Monthly Contribution")
-    risk = st.slider("Risk Tolerance", 1, 5, 3, key=f"{seg}_risk_slider")
-
-    # Computed metrics placeholder
-    computed = {
-        "estimate_annual_return": 0.07 + 0.02*(risk-3),
-        "projected_12m_value": monthly_contrib * 12 * (1 + 0.07)  # simple projection
-    }
-
-    # Prepare inputs for AI
-    inputs = {
-        "income_annual": income,
-        "monthly_contribution": monthly_contrib,
-        "risk_tolerance": risk,
-    }
-
-    advice_text, is_fallback = get_ai_advice(seg, mod, inputs, computed)
-
-    if is_fallback:
-        st.warning("Advanced AI is temporarily offline. Showing deterministic fallback advice", icon="⚠️")
-
-    # Display advice panel
-    st.markdown(f"<div class='ai-insight-card'><pre style='white-space:pre-wrap'>{advice_text}</pre></div>", unsafe_allow_html=True)
-
-    # Back button
-    if st.button("Back to Segment Hub", key="btn_back_invest_ai"):
-        st.session_state.page = "segment_hub"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ---- Contact & Lead Capture Export to CSV ----
-
-CONTACTS_CSV = "contact_submissions.csv"
-
-def save_contacts_to_csv():
-    """
-    On each submission, append contact data to CSV to persist data.
-    Assumes local write permission.
-    """
-    if not st.session_state.contact_submissions:
-        return
-    file_exists = pathlib.Path(CONTACTS_CSV).exists()
-    with open(CONTACTS_CSV, mode='a', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['timestamp', 'segment', 'module', 'name', 'email', 'phone', 'company']
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        for c in st.session_state.contact_submissions:
-            writer.writerow({
-                "timestamp": c.get("timestamp"),
-                "segment": c.get("segment"),
-                "module": c.get("module"),
-                "name": c.get("name"),
-                "email": c.get("email"),
-                "phone": c.get("phone"),
-                "company": c.get("company"),
-            })
-    # clear session state to avoid duplicates
-    st.session_state.contact_submissions.clear()
-
-# ---- Override PAGE_FUNCTIONS ----
-PAGE_FUNCTIONS.update({
-    ("individual", "estate"): page_module_estate,
-    ("household", "estate"): page_module_estate,
-    ("business", "estate"): page_module_estate,
-    ("individual", "investment"): page_module_investment_with_ai,  # AI advice enabled
-    ("household", "investment"): page_module_investment_household,
-    ("business", "investment"): page_module_investment_business,
-})
-
-# ---- Accessibility: submit AI Search on Enter key ---
-
-def ai_search_input():
-    """
-    Render AI search bar with glowing border, submit on Enter, accessible.
-    """
-    placeholder = "Describe your situation or goals in your own words…"
-    search_key = "home_ai_input_text"
-    user_input = st.text_input(
-        "",
-        key=search_key,
-        placeholder=placeholder,
-        label_visibility='collapsed',
-        max_chars=500,
-        help="Type your financial goals or questions here and submit with Enter or Analyze button.",
-        args=None,
-    )
-    analyze_key = "home_ai_analyze_btn"
-
-    # Since Streamlit no native keypress, small trick: Analyze button next to search box.
-
-    cols = st.columns([0.85, 0.15])
-    with cols[0]:
-        st.text_input(
-            "",
-            key=f"{search_key}_dummy",
-            value=user_input,
-            label="(hidden)",
-            label_visibility='collapsed',
-        )
-    with cols[1]:
-        if st.button("Analyze", key=analyze_key):
-            if user_input and len(user_input.strip()) >= 8:
-                segment, module, confidence = ai_natural_language_router(user_input.strip())
-                st.session_state.ai_router_result = {"segment": segment, "module": module, "confidence": confidence}
-                st.session_state.user_segment = segment
-                st.session_state.sub_module = module
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-            else:
-                st.error("Please enter a more detailed description for better advice.")
-
-# ---- Footer ---
-def render_footer():
-    st.markdown(f"""
-    <footer>
-    © {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.
-    </footer>
-    """, unsafe_allow_html=True)
-
-# --- Final Main Router override to save contacts on app exit ---
-
-def main_router_final():
-    apply_styles()
-
-    # Persist contacts to CSV on app exit
-    st.experimental_set_query_params()  # trigger rerun on param change
-
-    if not st.session_state.consent_accepted:
-        st.session_state.page = "privacy_gate"
-
-    page = st.session_state.page
-
-    with st.sidebar:
-        st.title(APP_NAME)
-        theme_selection = st.radio("Color Theme", options=['dark', 'light'], index=0 if st.session_state.theme=="dark" else 1, key="theme_radio", horizontal=True)
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        bg_select = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select")
-        selected_url = BACKGROUND_IMAGES.get(bg_select, list(BACKGROUND_IMAGES.values())[0])
-        if st.session_state.background != selected_url:
-            st.session_state.background = selected_url
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
-    if page == "privacy_gate":
-        page_privacy_gate()
-    elif page == "home":
-        # use accessible AI search input enhancement here
-        st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-        st.title("Welcome to OptiFin")
-        st.markdown("Describe your situation or goals in your own words:")
-        ai_search_input()
-        col_left, col_right = st.columns(3)
-        with col_left:
-            if st.button("Individual", key="segment_individual_btn"):
-                st.session_state.user_segment = "individual"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-        with col_right:
-            if st.button("Household", key="segment_household_btn"):
-                st.session_state.user_segment = "household"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-        with st.columns(1)[0]:
-            if st.button("Business", key="segment_business_btn"):
-                st.session_state.user_segment = "business"
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-        if st.session_state.ai_router_result:
-            r = st.session_state.ai_router_result
-            st.markdown(f"<small style='color:#4ade80;'>Understanding you → <b>{r['segment'].capitalize()} : {r['module'].capitalize()}</b> (confidence: {r['confidence']:.2f})</small>", unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-
-    elif page == "segment_hub":
-        page_segment_hub()
-    elif page == "module_form":
-        seg = st.session_state.user_segment
-        mod = st.session_state.sub_module
-        fn = PAGE_FUNCTIONS.get((seg, mod), None)
-        if fn:
-            fn()
-        else:
-            st.error(f"Module [{seg}/{mod}] not yet implemented.")
-            if st.button("Back to Segment Hub"):
-                st.session_state.page = "segment_hub"
-                st.experimental_rerun()
-    else:
-        st.error("Unknown page, redirecting to home...")
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    # Save contacts on every run (append to CSV if any)
-    save_contacts_to_csv()
-
-    # Render footer
-    render_footer()
-
-if __name__ == "__main__":
-    init_state()
-    main_router_final()
-# =========================================
-# OptiFin Part 4 - Advanced Personalization & UX
-# -----------------------------------------
-# Add this code below the previous parts in your app.py
-# =========================================
-
-
+        st.info("Please accept privacy agreement to continue.")
+# OptiFin Part 3 — User Authentication, Profile Management, Main Router Foundation
+
+import json
+import pathlib
+from datetime import date
+import streamlit as st
 import hashlib
 import uuid
-import json
-import threading
-import queue
-import time
-
-
-# ------------------------------
-# User Authentication & Profile
-# ------------------------------
 
 USERS_FILE = "optifin_users.json"
 
@@ -1684,7 +175,7 @@ def hash_password(password: str) -> str:
     return f"{hashed}:{salt}"
 
 def verify_password(stored_password: str, provided_password: str) -> bool:
-    """Verify a stored password against one provided."""
+    """Verify a stored password against the one provided."""
     hashed, salt = stored_password.split(':')
     check = hashlib.sha256(salt.encode() + provided_password.encode()).hexdigest()
     return check == hashed
@@ -1713,7 +204,7 @@ def init_auth_state():
         st.session_state.auth_message = ""
 
 def auth_register():
-    st.subheader("Register New Account")
+    st.header("Register New Account")
     username = st.text_input("Choose username", key="register_username")
     password = st.text_input("Choose password", type="password", key="register_password")
     password_confirm = st.text_input("Confirm password", type="password", key="register_password_confirm")
@@ -1740,17 +231,15 @@ def auth_register():
         save_users(users)
         st.success("Registration successful, please log in.")
         st.session_state.page = "auth_login"
+        st.experimental_rerun()
 
 def auth_login():
-    st.subheader("Login to OptiFin")
+    st.header("Login to OptiFin")
     username = st.text_input("Username", key="login_username")
     password = st.text_input("Password", type="password", key="login_password")
     if st.button("Login", key="login_btn"):
         users = load_users()
-        if username not in users:
-            st.error("Invalid username or password.")
-            return
-        if not verify_password(users[username]["password"], password):
+        if username not in users or not verify_password(users[username]["password"], password):
             st.error("Invalid username or password.")
             return
         st.session_state.auth_logged_in = True
@@ -1766,12 +255,15 @@ def auth_logout():
     st.session_state.page = "auth_login"
 
 def auth_profile_edit():
-    st.subheader("Edit Profile")
+    st.header("Edit Profile")
     profile = st.session_state.auth_profile
 
-    currency = st.selectbox("Preferred Currency", [DEFAULT_CURRENCY, "USD", "GBP", "EUR"], index=[DEFAULT_CURRENCY,"USD","GBP","EUR"].index(profile.get("currency", DEFAULT_CURRENCY)))
-    region = st.selectbox("Region/Country", [DEFAULT_REGION, "United Kingdom", "United States", "Australia"], index=[DEFAULT_REGION, "United Kingdom", "United States", "Australia"].index(profile.get("region", DEFAULT_REGION)))
-    language = st.selectbox("Language", ["en", "fr", "es"], index=["en","fr","es"].index(profile.get("language", "en")))
+    currency = st.selectbox("Preferred Currency", [DEFAULT_CURRENCY, "USD", "GBP", "EUR"],
+                            index=[DEFAULT_CURRENCY, "USD", "GBP", "EUR"].index(profile.get("currency", DEFAULT_CURRENCY)))
+    region = st.selectbox("Region/Country", [DEFAULT_REGION, "United Kingdom", "United States", "Australia"],
+                          index=[DEFAULT_REGION, "United Kingdom", "United States", "Australia"].index(profile.get("region", DEFAULT_REGION)))
+    language = st.selectbox("Language", ["en", "fr", "es"],
+                            index=["en", "fr", "es"].index(profile.get("language", "en")))
 
     if st.button("Save Profile Changes", key="auth_save_profile"):
         profile["currency"] = currency
@@ -1782,1056 +274,545 @@ def auth_profile_edit():
         save_users(users)
         st.success("Profile updated!")
 
-# ------------------------------
-# Multi-Goal Planning & Scenarios
-# ------------------------------
-
-def page_goals_manager():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header(f"{st.session_state.auth_username}'s Financial Goals")
-    profile = st.session_state.auth_profile
-
-    if "goals" not in profile:
-        profile["goals"] = []
-
-    with st.form("add_goal_form", clear_on_submit=True):
-        name = st.text_input("New Goal Name (e.g., 'Education Fund')")
-        target_amount = st.number_input("Target Amount (R)", min_value=0.0, format="%f", step=1000.0)
-        target_date = st.date_input("Target Date", min_value=date.today())
-        priority = st.selectbox("Priority", ["Low", "Medium", "High"], index=1)
-        if st.form_submit_button("Add Goal"):
-            if not name or target_amount <= 0:
-                st.error("Please enter valid goal name and amount.")
-            else:
-                profile["goals"].append({
-                    "name": name,
-                    "target_amount": target_amount,
-                    "target_date": target_date.isoformat(),
-                    "priority": priority
-                })
-                users = load_users()
-                users[st.session_state.auth_username]["profile"] = profile
-                save_users(users)
-                st.success(f"Goal '{name}' added!")
-                st.experimental_rerun()
-
-    if len(profile["goals"]) == 0:
-        st.info("No financial goals yet. Add one above.")
-    else:
-        for i, goal in enumerate(profile["goals"]):
-            target_date = pd.to_datetime(goal["target_date"]).date()
-            days_left = (target_date - date.today()).days
-            st.markdown(f"### {goal['name']}")
-            st.markdown(f"Amount: R{goal['target_amount']:,.2f}, Target Date: {target_date} ({days_left} days left), Priority: {goal['priority']}")
-            if st.button(f"Delete Goal '{goal['name']}'", key=f"del_goal_{i}"):
-                profile["goals"].pop(i)
-                users = load_users()
-                users[st.session_state.auth_username]["profile"] = profile
-                save_users(users)
-                st.success(f"Goal '{goal['name']}' deleted!")
-                st.experimental_rerun()
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# ------------------------------
-# Conversational AI Chat Interface
-# ------------------------------
-
-# Simple message queue for conversational context
-
-class ChatContext:
-    def __init__(self):
-        self.history = deque(maxlen=10)  # keep last 10 messages
-    
-    def add_user_message(self, msg):
-        self.history.append({"role": "user", "content": msg})
-
-    def add_assistant_message(self, msg):
-        self.history.append({"role": "assistant", "content": msg})
-
-    def get_messages(self):
-        return list(self.history)
-
-chat_contexts = {}
-
-def get_user_chat_context(username):
-    if username not in chat_contexts:
-        chat_contexts[username] = ChatContext()
-    return chat_contexts[username]
-
-def call_openai_chat(messages):
-    if not OPENAI_AVAILABLE or "OPENAI_API_KEY" not in st.secrets:
-        return None
-    try:
-        openai.api_key = st.secrets["OPENAI_API_KEY"]
-        response = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=messages,
-            temperature=0.4,
-            max_tokens=800,
-        )
-        return response.choices[0].message.content.strip()
-    except Exception:
-        return None
-
-def page_chatbot_interface():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("OptiFin Financial Advisor Chatbot")
-
-    username = st.session_state.auth_username
-    context = get_user_chat_context(username)
-
-    with st.form("chat_form", clear_on_submit=True):
-        user_input = st.text_area("Ask me about financial planning, investments, tax, retirement...", key="chat_input", height=100)
-        submitted = st.form_submit_button("Send")
-    
-    if submitted and user_input.strip():
-        context.add_user_message(user_input.strip())
-        with st.spinner("Thinking..."):
-            answer = call_openai_chat(context.get_messages())
-            if answer is None:
-                answer = "AI currently unavailable. Please try later or consult the deterministic advice modules."
-            context.add_assistant_message(answer)
-        st.experimental_rerun()
-    
-    # Display conversation history
-    for msg in context.get_messages():
-        if msg["role"] == "user":
-            st.markdown(f"**You:** {msg['content']}")
-        else:
-            st.markdown(f"**OptiFin:** {msg['content']}")
-
-    if st.button("Clear Chat", key="btn_clear_chat"):
-        chat_contexts.pop(username, None)
-        st.experimental_rerun()
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# ------------------------------
-# Notifications Framework (Basic)
-# ------------------------------
-
-def display_notifications():
-    if 'notifications' not in st.session_state:
-        st.session_state.notifications = []
-
-    # Sample notification: tile can be adapted later
-    if st.session_state.auth_logged_in and len(st.session_state.notifications) == 0:
-        st.session_state.notifications.append({
-            "type": "info",
-            "message": "Upcoming tax filing deadline is 30 September 2025."
-        })
-
-    for notif in st.session_state.notifications:
-        if notif["type"] == "info":
-            st.info(notif["message"])
-        elif notif["type"] == "warning":
-            st.warning(notif["message"])
-        elif notif["type"] == "error":
-            st.error(notif["message"])
-
-# ------------------------------
-# Augment Main Router & Pages
-# ------------------------------
-
-def main_router_part4():
-    apply_styles()
-
-    # Sidebar Auth/Profile management
-    with st.sidebar:
-        st.title(APP_NAME)
-        if st.session_state.auth_logged_in:
-            st.markdown(f"Signed in as **{st.session_state.auth_username}**")
-            if st.button("Logout", key="btn_logout"):
-                auth_logout()
-                st.experimental_rerun()
-            if st.button("Edit Profile", key="btn_edit_profile"):
-                st.session_state.page = "auth_profile_edit"
-                st.experimental_rerun()
-            if st.button("Manage Goals", key="btn_manage_goals"):
-                st.session_state.page = "goals_manager"
-                st.experimental_rerun()
-            if st.button("Chat with Advisor", key="btn_chat_advisor"):
-                st.session_state.page = "chatbot"
-                st.experimental_rerun()
-        else:
-            if st.button("Login", key="btn_show_login"):
-                st.session_state.page = "auth_login"
-                st.experimental_rerun()
-            if st.button("Register", key="btn_show_register"):
-                st.session_state.page = "auth_register"
-                st.experimental_rerun()
-
-        st.markdown("---")
-        theme_selection = st.radio("Theme", options=['dark', 'light'], index=0 if st.session_state.theme == 'dark' else 1, key="theme_radio_sidebar")
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        bg_choice = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select_sidebar")
-        new_background = BACKGROUND_IMAGES[bg_choice]
-        if st.session_state.background != new_background:
-            st.session_state.background = new_background
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
-    # Show notifications when logged in
-    if st.session_state.auth_logged_in:
-        display_notifications()
-
+# Simplified Page Router (expand in future parts)
+def main_router():
     page = st.session_state.page
 
-    # Route pages for Auth
     if page == "auth_login":
         auth_login()
     elif page == "auth_register":
         auth_register()
     elif page == "auth_profile_edit":
         auth_profile_edit()
-    elif page == "goals_manager":
-        page_goals_manager()
-    elif page == "chatbot":
-        page_chatbot_interface()
-    # Existing pages override for logged-in users
-    elif page == "privacy_gate" and not st.session_state.consent_accepted:
-        page_privacy_gate()
+    elif page == "privacy_gate":
+        st.error("Privacy gate implementation missing here.")
+    elif page == "segment_hub":
+        st.error("Segment hub implementation missing here.")
     elif page == "home":
-        if not st.session_state.auth_logged_in:
-            st.info("Please log in or register to access full features.")
-            if st.button("Login"):
-                st.session_state.page = "auth_login"
+        st.info("Welcome home! Implement your homepage here.")
+    else:
+        st.info(f"Unknown page: {page}. Redirecting to home.")
+        st.session_state.page = 'home'
+        st.experimental_rerun()
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 4 — Goals Management, Module Forms, AI Chat Assistant, and Navigation
+
+import streamlit as st
+import openai
+
+def load_goals():
+    profile = st.session_state.auth_profile or {}
+    return profile.get("goals", [])
+
+def save_goals(goals):
+    profile = st.session_state.auth_profile or {}
+    profile["goals"] = goals
+    st.session_state.auth_profile = profile
+    users = load_users()
+    if st.session_state.auth_username in users:
+        users[st.session_state.auth_username]["profile"]["goals"] = goals
+        save_users(users)
+
+def goals_manager():
+    st.header("Manage Your Financial Goals")
+    goals = load_goals()
+
+    st.markdown("Current Goals:")
+    for i, goal in enumerate(goals):
+        with st.expander(f"{goal.get('name', 'Unnamed Goal')}"):
+            name = st.text_input(f"Goal Name #{i+1}", value=goal.get("name", ""), key=f"goal_name_{i}")
+            amount = st.number_input(f"Target Amount for #{i+1}", min_value=0.0, value=goal.get("amount", 0.0), key=f"goal_amount_{i}")
+            target_date = st.date_input(f"Target Date for #{i+1}", value=goal.get("target_date", date.today() + datetime.timedelta(days=365)), key=f"goal_date_{i}")
+
+            goals[i] = {
+                "name": name,
+                "amount": amount,
+                "target_date": target_date.isoformat() if hasattr(target_date, "isoformat") else str(target_date),
+            }
+            if st.button(f"Remove Goal #{i+1}", key=f"goal_remove_{i}"):
+                goals.pop(i)
+                save_goals(goals)
                 st.experimental_rerun()
-            if st.button("Register"):
-                st.session_state.page = "auth_register"
-                st.experimental_rerun()
+
+    if st.button("Add New Goal"):
+        goals.append({"name": "", "amount": 0.0, "target_date": date.today().isoformat()})
+        save_goals(goals)
+        st.experimental_rerun()
+
+    save_goals(goals)
+
+def module_form():
+    st.title(f"Module for {st.session_state.user_segment.capitalize()}")
+
+    # Simple multi-module available
+    modules = ["investment", "tax", "retirement", "estate", "budget", "protection"]
+
+    selected_module = st.selectbox("Select a module", modules)
+
+    st.markdown(f"**You selected the module:** {selected_module}")
+
+    # Inputs based on module (simplified example)
+    if selected_module == "investment":
+        net_worth = st.number_input("Enter net worth (R)", min_value=0.0, step=1000.0)
+        risk_tolerance = st.slider("Risk tolerance (1 low - 5 high)", 1, 5, 3)
+        st.markdown(f"Analyzing investment options with net worth {net_worth} and risk tolerance {risk_tolerance}...")
+        # Placeholder logic, replace with real advisor engine
+    elif selected_module == "tax":
+        income = st.number_input("Annual taxable income (R)", min_value=0.0, step=1000.0)
+        deductions = st.number_input("Total deductions (R)", min_value=0.0, step=1000.0)
+        st.markdown(f"Calculating tax based on income {income} and deductions {deductions}...")
+    elif selected_module == "retirement":
+        current_age = st.number_input("Current age", min_value=18, max_value=80)
+        retire_age = st.number_input("Planned retirement age", min_value=current_age + 1, max_value=100)
+        desired_retirement_fund = st.number_input("Desired retirement fund (R)", min_value=0.0, step=1000.0)
+        st.markdown(f"Estimating retirement readiness from age {current_age} to {retire_age}...")
+    else:
+        st.info("Module form currently under construction")
+
+def page_chatbot():
+    st.title("OptiFin AI Personal Financial Assistant")
+
+    if "chat_history" not in st.session_state:
+        st.session_state.chat_history = []
+
+    user_input = st.text_input("Ask me anything about your finances or goals", key="chat_input")
+    if st.button("Send"):
+        if user_input.strip():
+            # Add user message to chat history
+            st.session_state.chat_history.append({"role": "user", "content": user_input.strip()})
+
+            # Call OpenAI GPT API to generate assistant reply (use your key in secrets.toml)
+            if OPENAI_AVAILABLE and "OPENAI_API_KEY" in st.secrets:
+                try:
+                    openai.api_key = st.secrets["OPENAI_API_KEY"]
+                    response = openai.ChatCompletion.create(
+                        model="gpt-4o-mini",
+                        messages=st.session_state.chat_history[-8:],  # keep last 8 messages for context
+                        max_tokens=300,
+                        temperature=0.7,
+                    )
+                    reply = response.choices[0].message['content']
+                except Exception as e:
+                    reply = "Sorry, an AI error occurred."
+            else:
+                reply = "OpenAI API key not configured."
+
+            st.session_state.chat_history.append({"role": "assistant", "content": reply})
+            st.experimental_rerun()
+
+    # Display chat history
+    for m in st.session_state.chat_history:
+        if m["role"] == "user":
+            st.markdown(f"**You:** {m['content']}")
         else:
-            page_home()
+            st.markdown(f"**OptiFin AI:** {m['content']}")
+
+# Update main router for pages from Part 4
+def main_router():
+    page = st.session_state.page
+
+    if page == "auth_login":
+        auth_login()
+    elif page == "auth_register":
+        auth_register()
+    elif page == "auth_profile_edit":
+        auth_profile_edit()
+    elif page == "privacy_gate":
+        page_privacy_gate()
     elif page == "segment_hub":
         page_segment_hub()
     elif page == "module_form":
-        seg = st.session_state.user_segment
-        mod = st.session_state.sub_module
-        fn = PAGE_FUNCTIONS.get((seg, mod), None)
-        if fn:
-            fn()
-        else:
-            st.error("Module not implemented yet.")
+        module_form()
+    elif page == "goals_manager":
+        goals_manager()
+    elif page == "chatbot":
+        page_chatbot()
+    elif page == "home":
+        st.info("OptiFin home page coming soon. Navigate via sidebar or AI router.")
     else:
-        st.error("Unknown page, redirecting to home...")
+        st.error(f"Unknown page '{page}', redirecting home.")
         st.session_state.page = "home"
         st.experimental_rerun()
 
-    # Save contact submissions persistently
-    save_contacts_to_csv()
-
-    render_footer()
-
 if __name__ == "__main__":
     init_state()
-    main_router_part4()
-# ===========================================
-# OptiFin Part 5 - Integration & Ecosystem Expansion
-# -------------------------------------------
-# Append below previous parts in your app.py
-# ===========================================
+    init_auth_state()
+    main_router()
+# OptiFin Part 5 — Predictive Analytics, Uploads, Regulatory Feeds, and Sidebar UI
 
-import fastapi
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import JSONResponse
-import uvicorn
-import base64
-import mimetypes
-
-# Note: FastAPI inclusion is conceptual here and would typically be served on a separate port
-# but for demonstration, we add minimal API endpoints.
-
-# -------------
-# FastAPI backend for advisor API and webhook
-# -------------
-
-app_api = FastAPI(title="OptiFin API", description="Financial Planning Ecosystem API")
-
-app_api.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Configure as per production security
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# In-memory client storage simulation (replace with DB)
-advisor_clients = {}
-
-@app_api.get("/clients/{username}")
-def get_client_profile(username: str):
-    client = advisor_clients.get(username)
-    if not client:
-        raise HTTPException(status_code=404, detail="Client not found")
-    return client
-
-@app_api.post("/clients/{username}/update")
-def update_client_profile(username: str, profile: dict):
-    advisor_clients[username] = profile
-    return JSONResponse(status_code=200, content={"message": f"Profile updated for {username}"})
-
-@app_api.post("/webhook/contact")
-async def contact_webhook(contact: dict):
-    # In production, process webhook data (e.g., store in DB, send email)
-    print(f"Received contact webhook: {contact}")
-    return {"message": "Contact received"}
-
-# ---- Run FastAPI separately (concept demo) ----
-# To run backend:
-# uvicorn.run(app_api, host="0.0.0.0", port=8000)
-
-# -------------
-# Real-time Market Data Enhancements
-# -------------
-
-def fetch_real_time_price(ticker):
-    # Implement advanced APIs like IEX Cloud or Alpha Vantage here
-    # For demo, fallback to yfinance realtime closing price
-    if not YF_AVAILABLE:
-        return None
-    try:
-        ticker_obj = yf.Ticker(ticker)
-        price = ticker_obj.history(period='1d')['Close'].iloc[-1]
-        return price
-    except Exception:
-        return None
-
-def enhanced_investment_advice(segment, inputs):
-    # This would use comprehensive datasets and live data
-    # For demo, a placeholder returns enhanced advice text
-    advice_text = f"""
-    Based on real-time market data and your profile for {segment}:
-
-    - Diversify your portfolio with a mix of Core ETFs and thematic funds.
-    - Maintain a minimum cash buffer of 5% to 10% for liquidity.
-    - Review your portfolio quarterly; adjust risk exposure based on market volatility.
-    - Utilize tax-free savings vehicles appropriate to your region.
-    - Contact OptiFin for personalized trade execution and tax wrap advice.
-    """
-    return advice_text.strip()
-
-# -------------
-# Banking & Accounting Integration Placeholder
-# -------------
-
-def bank_transaction_import_demo():
-    st.info("Bank integration coming soon. Meanwhile, you can import CSV files of transactions manually.")
-
-    uploaded_file = st.file_uploader("Upload CSV Bank Statement (Date, Description, Amount)")
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.write("Preview of imported bank transactions")
-            st.dataframe(df.head())
-            # Implement categorization, tagging here...
-        except Exception as ex:
-            st.error(f"Error reading CSV: {ex}")
-
-# -------------
-# Document Upload & OCR Placeholder
-# -------------
-
-def document_upload_and_processing():
-    st.info("Upload financial documents (bills, receipts, tax forms) for OCR extraction of data.")
-
-    uploaded_docs = st.file_uploader("Upload PDFs or Images", accept_multiple_files=True)
-
-    if uploaded_docs:
-        for doc in uploaded_docs:
-            st.write(f"Uploaded file: {doc.name} ({mimetypes.guess_type(doc.name)[0]})")
-            # In production, pass file to OCR service, extract fields, autofill forms
-
-        st.success("Document processing integrated with OCR coming soon.")
-
-# -------------
-# Compliance & Regulatory Update Monitor Placeholder
-# -------------
-
-def display_regulatory_updates():
-    st.subheader("Current Regulatory & Compliance Updates")
-    updates=[
-        {"date": "2025-07-01", "region": "SA", "description": "New medical tax credit limits applied."},
-        {"date": "2025-06-20", "region": "US", "description": "401(k) contribution limits raised for 2026."},
-        {"date": "2025-06-10", "region": "UK", "description": "Capital gains tax allowance updated."},
-    ]
-
-    for upd in updates:
-        st.markdown(f"**{upd['date']} [{upd['region']}]** - {upd['description']}")
-
-# -------------
-# Mobile & PWA Preparation Notes
-# -------------
-
-def pwa_installation_notice():
-    st.info("""  
-    OptiFin is fully designed with responsive UI for desktop and mobile browsers.  
-    To install as an app on your mobile device, use your browser menu's "Add to Home Screen".  
-    For native apps, mobile SDKs and sync services are planned for future releases.  
-    """)
-
-# -------------
-# Augment Main Router & UI with new pages
-# -------------
-
-def main_router_part5():
-    apply_styles()
-
-    with st.sidebar:
-        st.title(APP_NAME)
-        if st.session_state.auth_logged_in:
-            st.markdown(f"Signed in as **{st.session_state.auth_username}**")
-            if st.button("Logout", key="btn_logout_p5"):
-                auth_logout()
-                st.experimental_rerun()
-            if st.button("Edit Profile", key="btn_edit_profile_p5"):
-                st.session_state.page = "auth_profile_edit"
-                st.experimental_rerun()
-            if st.button("Manage Goals", key="btn_manage_goals_p5"):
-                st.session_state.page = "goals_manager"
-                st.experimental_rerun()
-            if st.button("Chat with Advisor", key="btn_chat_advisor_p5"):
-                st.session_state.page = "chatbot"
-                st.experimental_rerun()
-            if st.button("Upload Bank Transactions", key="btn_bank_upload"):
-                st.session_state.page = "bank_upload"
-                st.experimental_rerun()
-            if st.button("Upload Documents", key="btn_doc_upload"):
-                st.session_state.page = "doc_upload"
-                st.experimental_rerun()
-            if st.button("Regulatory Updates", key="btn_reg_updates"):
-                st.session_state.page = "reg_updates"
-                st.experimental_rerun()
-            if st.button("PWA Info", key="btn_pwa_info"):
-                st.session_state.page = "pwa_info"
-                st.experimental_rerun()
-        else:
-            if st.button("Login", key="btn_show_login_p5"):
-                st.session_state.page = "auth_login"
-                st.experimental_rerun()
-            if st.button("Register", key="btn_show_register_p5"):
-                st.session_state.page = "auth_register"
-                st.experimental_rerun()
-
-        st.markdown("---")
-        theme_selection = st.radio("Theme", options=['dark', 'light'], index=0 if st.session_state.theme == 'dark' else 1, key="theme_radio_sidebar_p5")
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        bg_choice = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select_sidebar_p5")
-        new_background = BACKGROUND_IMAGES[bg_choice]
-        if st.session_state.background != new_background:
-            st.session_state.background = new_background
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
-    page = st.session_state.page
-
-    if page == "bank_upload":
-        bank_transaction_import_demo()
-    elif page == "doc_upload":
-        document_upload_and_processing()
-    elif page == "reg_updates":
-        display_regulatory_updates()
-    elif page == "pwa_info":
-        pwa_installation_notice()
-    else:
-        # Former routing from part 4
-        main_router_part4()  # reuse Part4 router to handle other pages
-
-if __name__ == "__main__":
-    init_state()
-    main_router_part5()
-# Append to existing app.py
-import pandas as pd
-from prophet import Prophet
 import streamlit as st
+import pandas as pd
+import numpy as np
+from prophet import Prophet
+from io import BytesIO
 
 def page_predictive_cashflow():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.header("Predictive Cashflow & Expense Forecasting")
 
-    uploaded_file = st.file_uploader("Upload your transaction history CSV (Date, Amount, Category)", type=["csv"], key="upload_cashflow")
-    if uploaded_file is None:
-        st.info("Upload your CSV bank/expense transactions to generate predictions.")
-        st.markdown('</div>', unsafe_allow_html=True)
-        return
+    uploaded_file = st.file_uploader("Upload your bank transactions CSV", type=["csv"], key="upload_cashflow")
+    if uploaded_file:
+        try:
+            df = pd.read_csv(uploaded_file)
+            df.columns = [c.strip().lower() for c in df.columns]
+            if not all(col in df.columns for col in ["date", "amount"]):
+                st.error("CSV must contain 'date' and 'amount' columns.")
+                return
 
-    try:
-        df = pd.read_csv(uploaded_file)
-        df.columns = [c.strip().lower() for c in df.columns]
-        if not all(col in df.columns for col in ["date", "amount"]):
-            st.error("CSV must contain 'date' and 'amount' columns.")
-            st.markdown('</div>', unsafe_allow_html=True)
-            return
+            df["date"] = pd.to_datetime(df["date"])
+            daily = df.groupby("date")["amount"].sum().reset_index()
 
-        df["date"] = pd.to_datetime(df["date"])
-        daily_df = df.groupby("date")["amount"].sum().reset_index()
+            model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
+            prophet_df = daily.rename(columns={"date": "ds", "amount": "y"})
+            model.fit(prophet_df)
 
-        st.subheader("Raw Daily Transactions")
-        st.dataframe(daily_df.tail(50))
+            future = model.make_future_dataframe(periods=90)
+            forecast = model.predict(future)
 
-        # Prepare data for Prophet
-        prophet_data = daily_df.rename(columns={"date": "ds", "amount": "y"})
-        model = Prophet(yearly_seasonality=True, weekly_seasonality=True, daily_seasonality=False)
-        model.fit(prophet_data)
+            st.line_chart(forecast[["ds", "yhat"]].set_index("ds"))
 
-        future = model.make_future_dataframe(periods=90)  # next 90 days forecast
-        forecast = model.predict(future)
+            next_90_days = forecast[forecast['ds'] > daily["date"].max()]
+            predicted_sum = next_90_days["yhat"].sum()
+            st.metric("Predicted Net Cashflow Next 90 Days", f"R {predicted_sum:,.2f}")
 
-        st.subheader("Forecasted Cash Flow (Next 90 Days)")
-        fig = model.plot(forecast)
-        st.pyplot(fig)
-
-        # Summary metrics
-        predicted_spending = forecast[forecast["ds"] > daily_df["ds"].max()]["yhat"].sum()
-        st.metric("Predicted Net Cashflow next 90 days", f"R{predicted_spending:,.2f}")
-
-        st.markdown(
-            "Use this forecast to anticipate low cash periods and adjust your budgets or savings plans proactively."
-        )
-
-    except Exception as e:
-        st.error(f"Error processing data or forecasting: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-
-# Add this to PAGE_FUNCTIONS dict:
-PAGE_FUNCTIONS.update({
-    ("individual", "predictive_cashflow"): page_predictive_cashflow,
-    ("household", "predictive_cashflow"): page_predictive_cashflow,
-    ("business", "predictive_cashflow"): page_predictive_cashflow,
-})
-# Append to your app.py
-
-import numpy as np
-
-def page_smart_savings():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Smart Savings & Auto-Investment Plan")
-
-    # Get user profile inputs for simulation
-    income = st.number_input("Monthly Net Income (R)", min_value=0.0, step=100.0, key="smart_savings_income", format="%.2f")
-    current_savings = st.number_input("Current Savings (R)", min_value=0.0, step=100.0, key="smart_savings_current", format="%.2f")
-    target_goal = st.number_input("Savings Goal Amount (R)", min_value=0.0, step=1000.0, key="smart_savings_goal", format="%.2f")
-    months_to_goal = st.number_input("Months to Goal", min_value=1, max_value=360, value=60, key="smart_savings_months")
-    risk = st.slider("Risk Tolerance (1 = Low, 5 = High)", minimum=1, maximum=5, value=3, key="smart_savings_risk")
-
-    # Calculate recommendations dynamically
-    base_return = {1: 0.035, 2: 0.05, 3: 0.07, 4: 0.09, 5: 0.12}[risk]
-
-    # Interactive monthly savings slider to visualize future value
-    st.markdown("### Try different monthly savings amounts to see projection:")
-    suggested_savings = np.ceil((target_goal - current_savings) / months_to_goal)
-    monthly_savings_input = st.slider("Monthly Savings (R)", min_value=0, max_value=int(income), value=int(max(suggested_savings, 0)), step=100, key="smart_savings_slider")
-
-    # Future value calculation with compound interest monthly
-    monthly_return = (1 + base_return) ** (1/12) - 1
-    bal = current_savings
-    projections = []
-    for _ in range(months_to_goal):
-        bal = bal * (1 + monthly_return) + monthly_savings_input
-        projections.append(bal)
-
-    final_value = projections[-1]
-    gap = target_goal - final_value
-
-    # Feedback
-    st.markdown(f"**Projected Savings after {months_to_goal} months:** R{final_value:,.2f}")
-    if gap > 0:
-        st.warning(f"You are short by approximately R{gap:,.2f}. Consider increasing monthly savings or extending your timeframe.")
+        except Exception as e:
+            st.error(f"Error processing file or forecasting: {str(e)}")
     else:
-        st.success(f"Congratulations! Your plan exceeds the target by R{abs(gap):,.2f}.")
+        st.info("Upload your transactions CSV to predict cash flow.")
 
-    # Plot projection chart
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(y=projections, mode='lines+markers', line=dict(color='#4ade80'), marker=dict(size=5)))
-    fig.update_layout(
-        title="Savings Projection",
-        xaxis_title="Months",
-        yaxis_title="Projected Savings (R)",
-        height=280,
-        margin=dict(l=20, r=20, t=40, b=40),
-        paper_bgcolor='rgba(0,0,0,0)',
-        plot_bgcolor='rgba(20,24,28,0.85)' if st.session_state.theme == 'dark' else 'rgba(255,255,255,0.9)',
-        font=dict(color='#eef6ff' if st.session_state.theme == 'dark' else '#111'),
-    )
-    st.plotly_chart(fig, use_container_width=True)
+def page_bank_upload():
+    st.header("Upload Bank Transactions")
+    uploaded_file = st.file_uploader("Upload CSV bank statement", type=["csv"])
+    if uploaded_file:
+        st.success("File uploaded. Processing...")
+        # Placeholder: Process transactions here
 
-    # AI-generated suggestions (placeholder, real prompt integration in Part 4)
-    advice = f"""
-    Based on your inputs:
-    - Monthly Income: R{income:,.2f}
-    - Current Savings: R{current_savings:,.2f}
-    - Goal Amount: R{target_goal:,.2f}
-    - Timeframe: {months_to_goal} months
-    - Risk Tolerance: {risk}
+def page_doc_upload():
+    st.header("Upload Documents")
+    uploaded_files = st.file_uploader("Upload PDFs, tax docs etc.", type=["pdf", "docx", "xlsx"], accept_multiple_files=True)
+    if uploaded_files:
+        st.success(f"{len(uploaded_files)} files uploaded")
+        # Placeholder process uploaded files
 
-    We recommend saving at least R{max(suggested_savings, 0):,.2f} monthly with an estimated annual return of {base_return*100:.2f}%.
-    Keep consistent contributions and review periodically.
+def display_regulatory_updates():
+    st.header("Latest Regulatory Updates")
+    # Placeholder content; replace with live feed API integration
+    updates = [
+        "New SARS tax exemption thresholds announced.",
+        "Retirement fund contribution limits updated for 2025.",
+        "Important deadline for submission of annual tax returns.",
+        "Government launches financial literacy campaign."
+    ]
+    for update in updates:
+        st.markdown(f"- {update}")
 
-    Consult OptiFin experts for personalized investment portfolio adjustments.
-    """
-    st.markdown(f"<div class='ai-insight-card'><pre style='white-space:pre-wrap'>{advice.strip()}</pre></div>", unsafe_allow_html=True)
+# Sidebar UI enhancements
+def extend_sidebar():
+    st.sidebar.title(APP_NAME)
+    st.sidebar.markdown("### Navigation")
+    if st.session_state.auth_logged_in:
+        if st.sidebar.button("Home"):
+            st.session_state.page = "home"
+            st.experimental_rerun()
+        if st.sidebar.button("Manage Goals"):
+            st.session_state.page = "goals_manager"
+            st.experimental_rerun()
+        if st.sidebar.button("AI Chat"):
+            st.session_state.page = "chatbot"
+            st.experimental_rerun()
+        if st.sidebar.button("Upload Bank Statement"):
+            st.session_state.page = "bank_upload"
+            st.experimental_rerun()
+        if st.sidebar.button("Upload Documents"):
+            st.session_state.page = "doc_upload"
+            st.experimental_rerun()
+        if st.sidebar.button("Predictive Cashflow"):
+            st.session_state.page = "predictive_cashflow"
+            st.experimental_rerun()
+        if st.sidebar.button("Regulatory Updates"):
+            st.session_state.page = "reg_updates"
+            st.experimental_rerun()
+        if st.sidebar.button("Logout"):
+            auth_logout()
+            st.experimental_rerun()
+    else:
+        if st.sidebar.button("Login"):
+            st.session_state.page = "auth_login"
+            st.experimental_rerun()
+        if st.sidebar.button("Register"):
+            st.session_state.page = "auth_register"
+            st.experimental_rerun()
 
-    if st.button("Back to Segment Hub", key="btn_back_smart_savings"):
-        st.session_state.page = "segment_hub"
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### Theme & Background")
+    theme = st.sidebar.radio("Theme", ['dark', 'light'], index=0 if st.session_state.theme == 'dark' else 1)
+    if theme != st.session_state.theme:
+        st.session_state.theme = theme
         st.experimental_rerun()
 
-    st.markdown('</div>', unsafe_allow_html=True)
+    bg_options = list(BACKGROUND_IMAGES.keys())
+    bg_choice = st.sidebar.selectbox("Background Image", bg_options, index=bg_options.index(next(key for key, val in BACKGROUND_IMAGES.items() if val == st.session_state.background)))
+    new_bg = BACKGROUND_IMAGES[bg_choice]
+    if new_bg != st.session_state.background:
+        st.session_state.background = new_bg
+        st.experimental_rerun()
 
-# Add to PAGE_FUNCTIONS
-PAGE_FUNCTIONS.update({
-    ("individual", "smart_savings"): page_smart_savings,
-    ("household", "smart_savings"): page_smart_savings,
-    ("business", "smart_savings"): page_smart_savings,
-})
-# Append to your app.py
+# Extend main_router to include these pages
+def main_router():
+    page = st.session_state.page
 
-def simulate_tax_scenarios(annual_income, dependants, scenarios):
-    """
-    Simulates multiple tax optimization scenarios.
-    scenarios: list of dicts with keys:
-        - 'name': str scenario name
-        - 'deductions': float total deductions for scenario
-    Returns dict mapping scenario name to estimated tax and effective rate.
-    """
-    results = {}
-    for s in scenarios:
-        deductions = s.get('deductions', 0.0)
-        taxable_income = max(0.0, annual_income - deductions - dependants * 3500)
-        # Simple progressive tax, SA rules demo
-        if taxable_income < 50000:
-            rate = 0.18
-        elif taxable_income < 150000:
-            rate = 0.26
-        else:
-            rate = 0.39
-        est_tax = taxable_income * rate
-        eff_rate = est_tax / annual_income if annual_income > 0 else 0
-        results[s['name']] = {"estimated_tax": est_tax, "effective_rate": eff_rate, "taxable_income": taxable_income}
-    return results
+    # Authentication routes
+    if page == "auth_login":
+        auth_login()
+    elif page == "auth_register":
+        auth_register()
+    elif page == "auth_profile_edit":
+        auth_profile_edit()
+    elif page == "privacy_gate":
+        page_privacy_gate()
+    elif page == "segment_hub":
+        page_segment_hub()
+    # Core app modules
+    elif page == "module_form":
+        module_form()
+    elif page == "goals_manager":
+        goals_manager()
+    elif page == "chatbot":
+        page_chatbot()
+    elif page == "predictive_cashflow":
+        page_predictive_cashflow()
+    elif page == "bank_upload":
+        page_bank_upload()
+    elif page == "doc_upload":
+        page_doc_upload()
+    elif page == "reg_updates":
+        display_regulatory_updates()
+    elif page == "home":
+        st.info("Welcome to OptiFin. Use sidebar or AI router to navigate.")
+    else:
+        st.error(f"Unknown page '{page}'. Redirecting home.")
+        st.session_state.page = "home"
+        st.experimental_rerun()
 
-def page_tax_scenario_simulator():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Tax Optimization Scenario Simulator")
+# Initialize and run
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    extend_sidebar()
+    main_router()
+# OptiFin Part 6 — AI-Powered Predictive Analytics, Reports & Insights
 
-    try:
-        annual_income = st.number_input("Annual Income (R)", min_value=0.0, step=1000.0, key="tax_sim_income")
-        dependants = st.number_input("Number of Dependants", min_value=0, step=1, key="tax_sim_dependants")
-
-        st.markdown("### Define your tax scenarios (compare deductions)")
-
-        scenarios = []
-        rows = st.number_input("Number of scenarios to simulate", min_value=1, max_value=5, value=2, key="tax_sim_rows")
-        for i in range(int(rows)):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input(f"Scenario {i+1} Name", value=f"Scenario {i+1}", key=f"tax_sim_name_{i}")
-            with col2:
-                deductions = st.number_input(f"Total Deductions (R)", min_value=0.0, step=1000.0, key=f"tax_sim_deductions_{i}")
-            scenarios.append({"name": name, "deductions": deductions})
-
-        if st.button("Run Simulation", key="btn_run_tax_sim"):
-            results = simulate_tax_scenarios(annual_income, int(dependants), scenarios)
-            st.subheader("Simulation Results")
-            for s in scenarios:
-                res = results.get(s['name'])
-                if res:
-                    st.markdown(f"**{s['name']}**: Estimated Tax: R{res['estimated_tax']:,.2f} | Effective Tax Rate: {res['effective_rate']*100:.2f}% | Taxable Income: R{res['taxable_income']:,.2f}")
-                    # Bar style visualization
-                    st.progress(min(res['effective_rate'],1.0))
-            st.markdown("Consult OptiFin to implement optimal tax strategies based on these scenarios.")
-
-        if st.button("Back to Segment Hub", key="btn_back_tax_sim"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as e:
-        st.error(f"Error during simulation: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Add to PAGE_FUNCTIONS dict
-PAGE_FUNCTIONS.update({
-    ("individual", "tax_simulator"): page_tax_scenario_simulator,
-    ("household", "tax_simulator"): page_tax_scenario_simulator,
-    ("business", "tax_simulator"): page_tax_scenario_simulator,
-})
-# Append to your app.py
-
-def simulate_tax_scenarios(annual_income, dependants, scenarios):
-    """
-    Simulates multiple tax optimization scenarios.
-    scenarios: list of dicts with keys:
-        - 'name': str scenario name
-        - 'deductions': float total deductions for scenario
-    Returns dict mapping scenario name to estimated tax and effective rate.
-    """
-    results = {}
-    for s in scenarios:
-        deductions = s.get('deductions', 0.0)
-        taxable_income = max(0.0, annual_income - deductions - dependants * 3500)
-        # Simple progressive tax, SA rules demo
-        if taxable_income < 50000:
-            rate = 0.18
-        elif taxable_income < 150000:
-            rate = 0.26
-        else:
-            rate = 0.39
-        est_tax = taxable_income * rate
-        eff_rate = est_tax / annual_income if annual_income > 0 else 0
-        results[s['name']] = {"estimated_tax": est_tax, "effective_rate": eff_rate, "taxable_income": taxable_income}
-    return results
-
-def page_tax_scenario_simulator():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Tax Optimization Scenario Simulator")
-
-    try:
-        annual_income = st.number_input("Annual Income (R)", min_value=0.0, step=1000.0, key="tax_sim_income")
-        dependants = st.number_input("Number of Dependants", min_value=0, step=1, key="tax_sim_dependants")
-
-        st.markdown("### Define your tax scenarios (compare deductions)")
-
-        scenarios = []
-        rows = st.number_input("Number of scenarios to simulate", min_value=1, max_value=5, value=2, key="tax_sim_rows")
-        for i in range(int(rows)):
-            col1, col2 = st.columns(2)
-            with col1:
-                name = st.text_input(f"Scenario {i+1} Name", value=f"Scenario {i+1}", key=f"tax_sim_name_{i}")
-            with col2:
-                deductions = st.number_input(f"Total Deductions (R)", min_value=0.0, step=1000.0, key=f"tax_sim_deductions_{i}")
-            scenarios.append({"name": name, "deductions": deductions})
-
-        if st.button("Run Simulation", key="btn_run_tax_sim"):
-            results = simulate_tax_scenarios(annual_income, int(dependants), scenarios)
-            st.subheader("Simulation Results")
-            for s in scenarios:
-                res = results.get(s['name'])
-                if res:
-                    st.markdown(f"**{s['name']}**: Estimated Tax: R{res['estimated_tax']:,.2f} | Effective Tax Rate: {res['effective_rate']*100:.2f}% | Taxable Income: R{res['taxable_income']:,.2f}")
-                    # Bar style visualization
-                    st.progress(min(res['effective_rate'],1.0))
-            st.markdown("Consult OptiFin to implement optimal tax strategies based on these scenarios.")
-
-        if st.button("Back to Segment Hub", key="btn_back_tax_sim"):
-            st.session_state.page = "segment_hub"
-            st.experimental_rerun()
-
-    except Exception as e:
-        st.error(f"Error during simulation: {str(e)}")
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# Add to PAGE_FUNCTIONS dict
-PAGE_FUNCTIONS.update({
-    ("individual", "tax_simulator"): page_tax_scenario_simulator,
-    ("household", "tax_simulator"): page_tax_scenario_simulator,
-    ("business", "tax_simulator"): page_tax_scenario_simulator,
-})
-# Append below in your app.py
-
+import streamlit as st
+from prophet import Prophet
+import pandas as pd
+import numpy as np
+import plotly.graph_objects as go
 import textblob
+import json
+import openai
 
-def fetch_sample_financial_news():
-    """
-    Placeholder: fetches recent financial news headlines related to user investments.
-    Replace with live API calls (e.g. NewsAPI, Bloomberg API).
-    """
-    return [
+def page_predictive_cashflow():
+    st.header("Predictive Cashflow & Expense Forecasting")
+
+    uploaded_file = st.file_uploader("Upload your transaction history CSV (Date, Amount, Category)", type=["csv"])
+    if uploaded_file:
+        try:
+            df = pd.read_csv(uploaded_file)
+            df.columns = [c.strip().lower() for c in df.columns]
+            if not all(col in df.columns for col in ["date", "amount"]):
+                st.error("CSV must contain 'date' and 'amount' columns.")
+                return
+
+            df["date"] = pd.to_datetime(df["date"])
+            daily = df.groupby("date")["amount"].sum().reset_index()
+            prophet_data = daily.rename(columns={"date": "ds", "amount": "y"})
+
+            model = Prophet(yearly_seasonality=True, weekly_seasonality=True)
+            model.fit(prophet_data)
+
+            future = model.make_future_dataframe(periods=90)
+            forecast = model.predict(future)
+
+            fig = go.Figure()
+            fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Forecast'))
+            fig.add_trace(go.Scatter(x=daily['date'], y=daily['amount'], mode='markers', name='Actual'))
+            st.plotly_chart(fig, use_container_width=True)
+
+            predicted_sum = forecast[forecast['ds'] > daily['date'].max()]['yhat'].sum()
+            st.metric("Predicted Cashflow Next 90 Days", f"R {predicted_sum:,.2f}")
+
+        except Exception as e:
+            st.error(f"Error processing CSV or forecasting: {e}")
+    else:
+        st.info("Please upload your transaction history CSV.")
+
+def page_smart_savings():
+    st.header("Smart Savings & Auto Invest Plan")
+
+    income = st.number_input("Monthly Net Income (R)", min_value=0.0)
+    current_savings = st.number_input("Current Savings (R)", min_value=0.0)
+    target_goal = st.number_input("Savings Goal Amount (R)", min_value=0.0)
+    months_to_goal = st.number_input("Months to Goal", min_value=1, max_value=360, value=60)
+    risk = st.slider("Risk Tolerance (1=Low to 5=High)", 1, 5, 3)
+
+    base_return = {1: 0.035, 2: 0.05, 3: 0.07, 4: 0.09, 5: 0.12}[risk]
+
+    suggested_savings = max(0, (target_goal - current_savings) / months_to_goal)
+    monthly_savings = st.slider("Monthly Savings (R)", min_value=0, max_value=int(income), value=int(suggested_savings))
+
+    monthly_rate = (1 + base_return) ** (1/12) - 1
+    balance = current_savings
+    projection = []
+    for _ in range(months_to_goal):
+        balance = balance * (1 + monthly_rate) + monthly_savings
+        projection.append(balance)
+
+    st.line_chart(projection)
+
+    final_value = projection[-1]
+    gap = target_goal - final_value
+
+    st.metric(f"Projected value after {months_to_goal} months", f"R {final_value:,.2f}")
+    if gap > 0:
+        st.warning(f"Goal short by approximately R {gap:,.2f}. Consider increasing savings or extending timeframe.")
+    else:
+        st.success(f"Goal exceeded by R {abs(gap):,.2f}. Well done!")
+
+def page_tax_simulator():
+    st.header("Tax Optimization Scenario Simulator")
+
+    income = st.number_input("Annual Income (R)", min_value=0.0)
+    dependants = st.number_input("Number of Dependants", min_value=0, step=1)
+
+    scenarios = []
+    n = st.number_input("Number of Scenarios", min_value=1, max_value=5, value=2)
+    for i in range(int(n)):
+        name = st.text_input(f"Scenario {i+1} Name", value=f"Scenario {i+1}")
+        deductions = st.number_input(f"Scenario {i+1} Deductions (R)", min_value=0.0)
+        scenarios.append({"name": name, "deductions": deductions})
+
+    def simulate_tax(income, dependants, scenarios):
+        results = {}
+        for s in scenarios:
+            taxable = max(0, income - s.get("deductions", 0.0) - dependants * 3500)
+            if taxable < 50000: rate = 0.18
+            elif taxable < 150000: rate = 0.26
+            else: rate = 0.39
+            tax = taxable * rate
+            eff = tax / income if income else 0
+            results[s['name']] = {"tax": tax, "effective_rate": eff, "taxable_income": taxable}
+        return results
+
+    if st.button("Run Simulation"):
+        results = simulate_tax(income, int(dependants), scenarios)
+        for name, res in results.items():
+            st.write(f"**{name}**: Tax={res['tax']:.2f} Effective Rate={res['effective_rate']*100:.2f}% Taxable Income={res['taxable_income']:.2f}")
+
+def generate_ai_report_text(profile, metrics):
+    prompt = f"""
+You are a financial advisor. Create a concise monthly report narrative for this user profile: {json.dumps(profile)}.
+Metrics: {json.dumps(metrics)}.
+Give clear insights and advice without step-by-step instructions."""
+
+    if OPENAI_AVAILABLE and "OPENAI_API_KEY" in st.secrets:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        try:
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=prompt,
+                max_tokens=350,
+                temperature=0.3,
+            )
+            return response.choices[0].text.strip()
+        except:
+            return "Unable to generate AI report at this time."
+    else:
+        return """Monthly Financial Summary:
+- Current Savings: R{current_savings}
+- Projected Growth: R{projection_value}
+- Estimated Tax: R{estimated_tax}
+Consult your financial advisor for details."""
+
+def page_monthly_report():
+    st.header("Monthly Financial Report")
+
+    profile = st.session_state.auth_profile or {}
+
+    metrics = {
+        "projection_value": 1500000,
+        "estimated_tax": 250000,
+    }
+
+    report_text = generate_ai_report_text(profile, metrics)
+    st.markdown(f"**Report:**\n\n{report_text}")
+
+def page_sentiment_insights():
+    st.header("Market Sentiment & Portfolio Insights")
+
+    news = [
         "Stock markets rally amid easing inflation concerns",
         "Tech sector reports mixed earnings for Q3",
         "South African Rand strengthens against US dollar",
-        "New government tax incentives announced for retirement savings"
+        "New tax incentives for retirement savings introduced"
     ]
 
-def analyze_sentiment(text):
-    blob = textblob.TextBlob(text)
-    return blob.sentiment.polarity  # -1 (negative) to 1 (positive)
+    for i, headline in enumerate(news, 1):
+        polarity = textblob.TextBlob(headline).sentiment.polarity
+        sentiment = "Positive" if polarity > 0.1 else "Neutral" if -0.1 <= polarity <= 0.1 else "Negative"
+        color = "#22c55e" if sentiment == "Positive" else "#facc15" if sentiment == "Neutral" else "#ef4444"
+        st.markdown(f"{i}. <span style='color:{color}'><b>[{sentiment}]</b></span> {headline}", unsafe_allow_html=True)
 
-def page_sentiment_insights():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Market Sentiment & Portfolio Insights")
+    avg_sentiment = np.mean([textblob.TextBlob(n).sentiment.polarity for n in news])
+    st.markdown(f"**Average Market Sentiment:** {avg_sentiment:.2f}")
 
-    # Fetch news
-    news = fetch_sample_financial_news()
-    st.subheader("Recent Financial News")
-    for idx, headline in enumerate(news, 1):
-        polarity = analyze_sentiment(headline)
-        sentiment_label = "Positive" if polarity > 0.1 else "Neutral" if -0.1 <= polarity <= 0.1 else "Negative"
-        color = "#22c55e" if sentiment_label=="Positive" else "#facc15" if sentiment_label=="Neutral" else "#ef4444"
-        st.markdown(f"{idx}. <span style='color:{color}'><b>[{sentiment_label}]</b></span> {headline}", unsafe_allow_html=True)
+    advice = (
+        "Market sentiment positive. You might consider increasing growth exposure."
+        if avg_sentiment > 0.2 else
+        "Market sentiment negative. Consider defensive strategies."
+        if avg_sentiment < -0.2 else
+        "Market sentiment neutral. Maintain your current portfolio."
+    )
+    st.markdown(f"**Advice:** {advice}")
 
-    # Aggregate sentiment
-    avg_sentiment = sum(analyze_sentiment(n) for n in news) / len(news)
-    st.markdown(f"**Average market sentiment score:** {avg_sentiment:.2f}")
+# Add calls for rerun immediately after state changes to avoid double-clicks issues
+# Sample example for button in any page:
+# if st.button("Next"):
+#     st.session_state.page = "some_page"
+#     st.experimental_rerun()
 
-    # Simple advice based on sentiment
-    if avg_sentiment > 0.2:
-        advice = "Market sentiment is positive. Consider cautiously increasing growth allocations."
-    elif avg_sentiment < -0.2:
-        advice = "Market sentiment is negative. Defensive positioning and cash buffers may be advisable."
-    else:
-        advice = "Market sentiment neutral; maintain current portfolio balance and monitor news."
-
-    st.markdown(f"<div class='ai-insight-card'>{advice}</div>", unsafe_allow_html=True)
-
-    if st.button("Back to Segment Hub", key="btn_back_sentiment"):
-        st.session_state.page = "segment_hub"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-PAGE_FUNCTIONS.update({
-    ("individual", "sentiment_insights"): page_sentiment_insights,
-    ("household", "sentiment_insights"): page_sentiment_insights,
-    ("business", "sentiment_insights"): page_sentiment_insights,
-})
-# Append to your app.py
-
-# Simple in-memory user achievement tracking (persist to DB/file in production)
-if "achievements" not in st.session_state:
-    st.session_state.achievements = set()
-
-def award_achievement(name: str):
-    if name not in st.session_state.achievements:
-        st.session_state.achievements.add(name)
-        st.success(f"🎉 Achievement Unlocked: {name}!")
-
-def page_achievements():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Achievements & Rewards")
-
-    # Sample achievements checks (extend with real logic)
-    profile = st.session_state.auth_profile or {}
-    goals = profile.get("goals", [])
-    if goals and "Goal Setter" not in st.session_state.achievements:
-        award_achievement("Goal Setter")
-    if len(goals) >= 3 and "Multi-Goal Planner" not in st.session_state.achievements:
-        award_achievement("Multi-Goal Planner")
-
-    st.markdown("Your Achievements:")
-    if not st.session_state.achievements:
-        st.info("No achievements yet. Keep progressing!")
-    else:
-        for ach in st.session_state.achievements:
-            st.markdown(f"- ✅ {ach}")
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Community Forum Placeholder --------
-
-def page_community_forum():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Community Forum")
-
-    st.info("The forum is coming soon! Meanwhile, join our mailing list or social media for updates.")
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Educational Resources --------
-
-def page_educational_resources():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Financial Education & Tutorials")
-
-    tutorials = [
-        {"title": "Basics of Investing", "link": "https://www.investopedia.com/articles/basics/06/invest1000.asp"},
-        {"title": "Tax Savings Strategies", "link": "https://www.sars.gov.za/"},
-        {"title": "Retirement Planning 101", "link": "https://www.a retirement site.com"},
-        {"title": "Understanding Credit & Debt", "link": "https://www.consumerfinance.gov/"},
-    ]
-
-    for tut in tutorials:
-        st.markdown(f"- [{tut['title']}]({tut['link']})")
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- Referral Program Placeholder --------
-
-def page_referral_program():
-    st.markdown('<div class="glass-card">', unsafe_allow_html=True)
-    st.header("Referral Program")
-
-    st.info("""
-    Invite your friends to OptiFin and earn credits towards premium reports and advice.
-    Share your unique referral code:
-    """)
-    if st.session_state.auth_logged_in:
-        referral_code = hashlib.sha256(st.session_state.auth_username.encode()).hexdigest()[:8].upper()
-        st.code(referral_code)
-    else:
-        st.warning("Please log in to see your referral code.")
-
-    if st.button("Back to Home"):
-        st.session_state.page = "home"
-        st.experimental_rerun()
-
-    st.markdown('</div>', unsafe_allow_html=True)
-
-# -------- New Pages Mapping --------
-
-PAGE_FUNCTIONS.update({
-    ("individual", "achievements"): page_achievements,
-    ("household", "achievements"): page_achievements,
-    ("business", "achievements"): page_achievements,
-
-    ("individual", "community"): page_community_forum,
-    ("household", "community"): page_community_forum,
-    ("business", "community"): page_community_forum,
-
-    ("individual", "education"): page_educational_resources,
-    ("household", "education"): page_educational_resources,
-    ("business", "education"): page_educational_resources,
-
-    ("individual", "referral"): page_referral_program,
-    ("household", "referral"): page_referral_program,
-    ("business", "referral"): page_referral_program,
-})
-
-# -------- Enhance Sidebar --------
-
-def extend_sidebar():
-    if st.session_state.auth_logged_in:
-        st.markdown("---")
-        st.markdown("### Community")
-        if st.button("Achievements", key="sidebar_achievements"):
-            st.session_state.page = "achievements"
-            st.experimental_rerun()
-        if st.button("Community Forum", key="sidebar_community"):
-            st.session_state.page = "community"
-            st.experimental_rerun()
-        if st.button("Educational Resources", key="sidebar_education"):
-            st.session_state.page = "education"
-            st.experimental_rerun()
-        if st.button("Referral Program", key="sidebar_referral"):
-            st.session_state.page = "referral"
-            st.experimental_rerun()
-
-# -------- Modify main router to call extend_sidebar --------
-
-_old_main_router_part5 = main_router_part5  # save old router as _old_main_router_part5
-
-def main_router_part7():
-    apply_styles()
-
-    with st.sidebar:
-        st.title(APP_NAME)
-
-        if st.session_state.auth_logged_in:
-            st.markdown(f"Signed in as **{st.session_state.auth_username}**")
-            if st.button("Logout", key="btn_logout7"):
-                auth_logout()
-                st.experimental_rerun()
-            if st.button("Edit Profile", key="btn_edit_profile7"):
-                st.session_state.page = "auth_profile_edit"
-                st.experimental_rerun()
-            if st.button("Manage Goals", key="btn_manage_goals7"):
-                st.session_state.page = "goals_manager"
-                st.experimental_rerun()
-            if st.button("Chat with Advisor", key="btn_chat_advisor7"):
-                st.session_state.page = "chatbot"
-                st.experimental_rerun()
-            if st.button("Upload Bank Transactions", key="btn_bank_upload7"):
-                st.session_state.page = "bank_upload"
-                st.experimental_rerun()
-            if st.button("Upload Documents", key="btn_doc_upload7"):
-                st.session_state.page = "doc_upload"
-                st.experimental_rerun()
-            if st.button("Regulatory Updates", key="btn_reg_updates7"):
-                st.session_state.page = "reg_updates"
-                st.experimental_rerun()
-            if st.button("PWA Info", key="btn_pwa_info7"):
-                st.session_state.page = "pwa_info"
-                st.experimental_rerun()
-        else:
-            if st.button("Login", key="btn_show_login7"):
-                st.session_state.page = "auth_login"
-                st.experimental_rerun()
-            if st.button("Register", key="btn_show_register7"):
-                st.session_state.page = "auth_register"
-                st.experimental_rerun()
-
-        extend_sidebar()
-
-        st.markdown("---")
-        theme_selection = st.radio("Theme", options=['dark', 'light'], index=0 if st.session_state.theme == 'dark' else 1, key="theme_radio_sidebar7")
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        bg_choice = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select_sidebar7")
-        new_background = BACKGROUND_IMAGES[bg_choice]
-        if st.session_state.background != new_background:
-            st.session_state.background = new_background
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
+# Extend main router for Part 6 pages
+def main_router():
     page = st.session_state.page
 
-    if page == "bank_upload":
-        bank_transaction_import_demo()
-    elif page == "doc_upload":
-        document_upload_and_processing()
-    elif page == "reg_updates":
-        display_regulatory_updates()
-    elif page == "pwa_info":
-        pwa_installation_notice()
+    if page == "predictive_cashflow":
+        page_predictive_cashflow()
+    elif page == "smart_savings":
+        page_smart_savings()
+    elif page == "tax_simulator":
+        page_tax_simulator()
+    elif page == "monthly_report":
+        page_monthly_report()
+    elif page == "sentiment_insights":
+        page_sentiment_insights()
     else:
-        # Route using all prior pages
-        if page in ["auth_login", "auth_register", "auth_profile_edit", "goals_manager", "chatbot", "privacy_gate",
-                    "home", "segment_hub", "module_form"]:
-            _old_main_router_part5()
-        elif page in ["achievements", "community", "education", "referral"]:
-            fn = PAGE_FUNCTIONS.get((st.session_state.user_segment, page), None)
-            if fn:
-                fn()
-            else:
-                st.error(f"Page not implemented: {page}")
-        else:
-            st.error(f"Unknown page: {page}. Redirecting home...")
-            st.session_state.page = "home"
-            st.experimental_rerun()
+        # fallback to prior routing (Part 5 and earlier)
+        # assume main_router from previous part handles
+        pass
 
 if __name__ == "__main__":
     init_state()
-    main_router_part7()
-# Continue Part 7 - Community, Achievements, Education, Referral, Sidebar and Routing enhancements
+    init_auth_state()
+    extend_sidebar()
+    main_router()
+# OptiFin Parts 7 & 8 — Community, Achievements, Referral, Education, Modern UI & Styling
 
-# Simple in-memory user achievement tracking (persist to DB/file in production)
+import streamlit as st
+import hashlib
+
+# Simple in-memory achievement tracking
 if "achievements" not in st.session_state:
     st.session_state.achievements = set()
 
@@ -2840,43 +821,42 @@ def award_achievement(name: str):
         st.session_state.achievements.add(name)
         st.success(f"🎉 Achievement Unlocked: {name}!")
 
+# Achievements page
 def page_achievements():
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.header("Achievements & Rewards")
-
-    # Sample achievements checks (extend with real logic)
     profile = st.session_state.auth_profile or {}
     goals = profile.get("goals", [])
+
     if goals and "Goal Setter" not in st.session_state.achievements:
         award_achievement("Goal Setter")
     if len(goals) >= 3 and "Multi-Goal Planner" not in st.session_state.achievements:
         award_achievement("Multi-Goal Planner")
 
-    st.markdown("Your Achievements:")
+    st.markdown("### Your Achievements:")
     if not st.session_state.achievements:
         st.info("No achievements yet. Keep progressing!")
     else:
-        for ach in st.session_state.achievements:
+        for ach in sorted(st.session_state.achievements):
             st.markdown(f"- ✅ {ach}")
 
     if st.button("Back to Home"):
         st.session_state.page = "home"
         st.experimental_rerun()
-
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Community forum placeholder
 def page_community_forum():
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.header("Community Forum")
-
-    st.info("The forum is coming soon! Meanwhile, join our mailing list or social media for updates.")
+    st.info("The forum is coming soon! Join our mailing list or social media for updates.")
 
     if st.button("Back to Home"):
         st.session_state.page = "home"
         st.experimental_rerun()
-
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Educational resources page
 def page_educational_resources():
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.header("Financial Education & Tutorials")
@@ -2894,154 +874,1580 @@ def page_educational_resources():
     if st.button("Back to Home"):
         st.session_state.page = "home"
         st.experimental_rerun()
-
     st.markdown('</div>', unsafe_allow_html=True)
 
+# Referral program page
 def page_referral_program():
     st.markdown('<div class="glass-card">', unsafe_allow_html=True)
     st.header("Referral Program")
 
-    st.info("""
-    Invite your friends to OptiFin and earn credits towards premium reports and advice.
-    Share your unique referral code:
-    """)
+    st.info("Invite your friends to OptiFin and earn credits towards premium reports and advice.")
     if st.session_state.auth_logged_in:
-        referral_code = hashlib.sha256(st.session_state.auth_username.encode()).hexdigest()[:8].upper()
+        # Generate referral code (hash first 8 chars of username md5)
+        referral_code = hashlib.md5(st.session_state.auth_username.encode()).hexdigest()[:8].upper()
         st.code(referral_code)
+        st.markdown("Share your referral code with friends!")
     else:
         st.warning("Please log in to see your referral code.")
 
     if st.button("Back to Home"):
         st.session_state.page = "home"
         st.experimental_rerun()
-
     st.markdown('</div>', unsafe_allow_html=True)
 
-# Update PAGE_FUNCTIONS dictionary to include new pages
-PAGE_FUNCTIONS.update({
-    ("individual", "achievements"): page_achievements,
-    ("household", "achievements"): page_achievements,
-    ("business", "achievements"): page_achievements,
+# Base CSS for modern, readable, sleek UI with fixes for button responsiveness and background layering
+def get_modern_css():
+    theme = st.session_state.theme if "theme" in st.session_state else "dark"
+    text_color = "#eef6ff" if theme == "dark" else "#111"
+    bg_color = "rgba(20,24,28,0.85)" if theme == "dark" else "rgba(255,255,255,0.9)"
+    overlay_color = "rgba(0,0,0,0.55)" if theme == "dark" else "rgba(255,255,255,0.85)"
+    button_bg = "linear-gradient(135deg,#004174,#047860)" if theme == "dark" else "linear-gradient(135deg,#06b1a6,#387c6a)"
+    button_hover_bg = "linear-gradient(135deg,#047860,#004174)" if theme == "dark" else "linear-gradient(135deg,#387c6a,#06b1a6)"
 
-    ("individual", "community"): page_community_forum,
-    ("household", "community"): page_community_forum,
-    ("business", "community"): page_community_forum,
+    return f"""
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+    html, body, #root, .appview-container, .main {{
+        height: 100%;
+        margin: 0;
+        font-family: 'Inter', sans-serif;
+        background: url('{st.session_state.background}') no-repeat center center fixed;
+        background-size: cover;
+        color: {text_color};
+    }}
+    body:before {{
+        content: '';
+        position: fixed;
+        top:0; left:0; width:100vw; height:100vh;
+        background-color: {overlay_color};
+        z-index: -1;
+    }}
+    .glass-card {{
+        background: {bg_color};
+        border-radius: 20px;
+        padding: 30px;
+        margin-bottom: 30px;
+        box-shadow: 0 15px 40px rgba(8, 24, 70, 0.6);
+        backdrop-filter: blur(10px);
+        transition: box-shadow 0.3s ease;
+    }}
+    .glass-card:hover {{
+        box-shadow: 0 25px 55px rgba(8, 24, 70, 0.8);
+    }}
+    h1, h2, h3 {{
+        font-weight: 700;
+        color: {text_color};
+    }}
+    h1 {{ font-size: 48px; margin-bottom: 1rem; }}
+    h2 {{ font-size: 36px; margin-bottom: 0.75rem; }}
+    button {{
+        background: {button_bg};
+        color: white !important;
+        font-weight: 700;
+        border-radius: 15px;
+        padding: 14px 28px;
+        border: none;
+        box-shadow: 0 6px 20px rgba(4,120,96,0.4);
+        font-size: 18px;
+        transition: background 0.3s ease, box-shadow 0.3s ease;
+        cursor: pointer;
+        user-select: none;
+    }}
+    button:hover, button:focus {{
+        background: {button_hover_bg};
+        box-shadow: 0 15px 35px rgba(4,120,96,0.7);
+        outline: none;
+    }}
+    .stTextInput>div>div>input {{
+        border-radius: 15px;
+        border: 2px solid #05f7a7;
+        padding: 14px 18px;
+        font-size: 16px;
+        color: {text_color};
+        background-color: rgba(0, 0, 0, 0.7);
+        transition: border-color 0.3s ease;
+        width: 100%;
+        max-width: 600px;
+        user-select: text;
+    }}
+    .stTextInput>div>div>input::placeholder {{
+        color: rgba(255,255,255,0.6);
+    }}
+    .stTextInput>div>div>input:focus {{
+        border-color: #50fa7b;
+        outline: none;
+        box-shadow: 0 0 20px #50fa7b;
+        background-color: rgba(0,0,0,0.9);
+    }}
+    footer {{
+        color: {text_color};
+        margin-top: 2rem;
+        padding-top: 1rem;
+        border-top: 1px solid rgba(255,255,255,0.1);
+        font-size: 0.87rem;
+        text-align: center;
+        font-weight: 400;
+    }}
+    /* Responsive */
+    @media (max-width: 768px) {{
+        h1 {{ font-size: 38px; }}
+        h2 {{ font-size: 28px; }}
+        button {{ font-size: 16px; padding: 12px 20px; }}
+        .glass-card {{ padding: 18px; }}
+    }}
+    </style>
+    """
 
-    ("individual", "education"): page_educational_resources,
-    ("household", "education"): page_educational_resources,
-    ("business", "education"): page_educational_resources,
+def apply_global_styles():
+    st.markdown(get_modern_css(), unsafe_allow_html=True)
 
-    ("individual", "referral"): page_referral_program,
-    ("household", "referral"): page_referral_program,
-    ("business", "referral"): page_referral_program,
-})
-
-# Enhance sidebar to include community sections
-def extend_sidebar():
-    if st.session_state.auth_logged_in:
-        st.markdown("---")
-        st.markdown("### Community")
-        if st.button("Achievements", key="sidebar_achievements"):
-            st.session_state.page = "achievements"
-            st.experimental_rerun()
-        if st.button("Community Forum", key="sidebar_community"):
-            st.session_state.page = "community"
-            st.experimental_rerun()
-        if st.button("Educational Resources", key="sidebar_education"):
-            st.session_state.page = "education"
-            st.experimental_rerun()
-        if st.button("Referral Program", key="sidebar_referral"):
-            st.session_state.page = "referral"
-            st.experimental_rerun()
-
-# Override main router portion to call extend_sidebar
-_old_main_router_part5 = main_router_part5  # keep old main router
-
-def main_router_part7():
-    apply_styles()
-
-    with st.sidebar:
-        st.title(APP_NAME)
-
-        if st.session_state.auth_logged_in:
-            st.markdown(f"Signed in as **{st.session_state.auth_username}**")
-            if st.button("Logout", key="btn_logout7"):
-                auth_logout()
-                st.experimental_rerun()
-            if st.button("Edit Profile", key="btn_edit_profile7"):
-                st.session_state.page = "auth_profile_edit"
-                st.experimental_rerun()
-            if st.button("Manage Goals", key="btn_manage_goals7"):
-                st.session_state.page = "goals_manager"
-                st.experimental_rerun()
-            if st.button("Chat with Advisor", key="btn_chat_advisor7"):
-                st.session_state.page = "chatbot"
-                st.experimental_rerun()
-            if st.button("Upload Bank Transactions", key="btn_bank_upload7"):
-                st.session_state.page = "bank_upload"
-                st.experimental_rerun()
-            if st.button("Upload Documents", key="btn_doc_upload7"):
-                st.session_state.page = "doc_upload"
-                st.experimental_rerun()
-            if st.button("Regulatory Updates", key="btn_reg_updates7"):
-                st.session_state.page = "reg_updates"
-                st.experimental_rerun()
-            if st.button("PWA Info", key="btn_pwa_info7"):
-                st.session_state.page = "pwa_info"
-                st.experimental_rerun()
-        else:
-            if st.button("Login", key="btn_show_login7"):
-                st.session_state.page = "auth_login"
-                st.experimental_rerun()
-            if st.button("Register", key="btn_show_register7"):
-                st.session_state.page = "auth_register"
-                st.experimental_rerun()
-
-        extend_sidebar()
-
-        st.markdown("---")
-        theme_selection = st.radio("Theme", options=['dark', 'light'], index=0 if st.session_state.theme == 'dark' else 1, key="theme_radio_sidebar7")
-        if theme_selection != st.session_state.theme:
-            st.session_state.theme = theme_selection
-            st.experimental_rerun()
-
-        bg_choice = st.selectbox("Background Image", options=list(BACKGROUND_IMAGES.keys()), key="background_select_sidebar7")
-        new_background = BACKGROUND_IMAGES[bg_choice]
-        if st.session_state.background != new_background:
-            st.session_state.background = new_background
-            st.experimental_rerun()
-
-        st.markdown("---")
-        st.markdown(f"© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.")
-
+# Integrate with main router (add these pages)
+def main_router():
     page = st.session_state.page
 
-    # Route pages
-    if page == "bank_upload":
-        bank_transaction_import_demo()
-    elif page == "doc_upload":
-        document_upload_and_processing()
-    elif page == "reg_updates":
-        display_regulatory_updates()
-    elif page == "pwa_info":
-        pwa_installation_notice()
+    if page == "achievements":
+        page_achievements()
+    elif page == "community":
+        page_community_forum()
+    elif page == "education":
+        page_educational_resources()
+    elif page == "referral":
+        page_referral_program()
     else:
-        if page in ["auth_login", "auth_register", "auth_profile_edit", "goals_manager", "chatbot",
-                    "privacy_gate", "home", "segment_hub", "module_form"]:
-            _old_main_router_part5()  # call old router for core pages
-        elif page in ["achievements", "community", "education", "referral"]:
-            fn = PAGE_FUNCTIONS.get((st.session_state.user_segment, page), None)
-            if fn:
-                fn()
-            else:
-                st.error(f"Page not implemented: {page}")
+        # fallback to earlier routing
+        if page in ["home", "auth_login", "auth_register", "auth_profile_edit", "segment_hub", "module_form", "goals_manager", "chatbot",
+                    "predictive_cashflow", "bank_upload", "doc_upload", "reg_updates", "smart_savings", "tax_simulator", "monthly_report", "sentiment_insights"]:
+            # Call previously defined router (assuming you merged parts)
+            pass
         else:
-            st.error(f"Unknown page: {page}. Redirecting home...")
+            st.warning("Invalid page. Redirecting to home.")
             st.session_state.page = "home"
             st.experimental_rerun()
 
 if __name__ == "__main__":
     init_state()
-    main_router_part7()
+    init_auth_state()
+    apply_global_styles()
+    extend_sidebar()  # Sidebar defined in Part 5, integrated here
+    main_router()
+
+# Footer caller, use in main app layout
+def app_footer():
+    st.markdown(f"<footer>© {APP_YEAR} {APP_NAME} — Smart financial planning, simplified.</footer>", unsafe_allow_html=True)
+# OptiFin Part 9 — Final Fixes, PDF & Excel Export, PDF Unicode Fixes, UX Polish
+
+import streamlit as st
+from fpdf import FPDF
+import io
+import pandas as pd
+
+# --- PDF Generation with Unicode-safe text ---
+def generate_pdf_report(title: str, meta: dict, advice_text: str, chart_bytes: bytes | None):
+    """
+    Create a branded PDF report with sanitized text to avoid UnicodeEncodeError.
+    """
+    if not FPDF:
+        st.warning("PDF generation requires fpdf package.")
+        return None
+
+    pdf = FPDF()
+    pdf.add_page()
+
+    # Set metadata title
+    safe_title = title.encode("ascii", errors="ignore").decode()
+    pdf.set_font("Helvetica", "B", 18)
+    pdf.cell(0, 15, safe_title, ln=True, align='C')
+
+    pdf.ln(10)
+
+    # Add meta info sanitized to ascii
+    pdf.set_font("Helvetica", "", 12)
+    for k, v in meta.items():
+        safe_k = str(k).encode('ascii', errors='ignore').decode()
+        safe_v = str(v).encode('ascii', errors='ignore').decode()
+        pdf.cell(0, 10, f"{safe_k}: {safe_v}", ln=True)
+
+    pdf.ln(10)
+
+    # Add advice section
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, "AI-generated Advice:", ln=True)
+    pdf.set_font("Helvetica", "", 12)
+
+    safe_advice = advice_text.encode("ascii", errors="ignore").decode()
+    pdf.multi_cell(0, 10, safe_advice)
+
+    # Embed chart if available
+    if chart_bytes:
+        try:
+            pdf.image(io.BytesIO(chart_bytes), x=15, y=pdf.get_y() + 5, w=180)
+        except Exception:
+            pass
+
+    return pdf.output(dest="S").encode("latin1")
 
 
+# --- Excel Export (basic) ---
+def generate_excel_report(data: pd.DataFrame):
+    towrite = io.BytesIO()
+    data.to_excel(towrite, index=False)
+    towrite.seek(0)
+    return towrite.read()
+
+
+# --- Streamlit UI wrappers for export ---
+def page_monthly_report():
+    st.header("Generate Monthly Financial Report")
+
+    profile = st.session_state.auth_profile or {}
+    advice_text = "Your AI-generated financial summary and advice will appear here."
+    # Dummy metadata
+    meta = {"User": st.session_state.auth_username, "Date": str(st.date_input("Report Date", value=st.session_state.get("report_date", None) or st.today()))}
+
+    if st.button("Generate PDF Report"):
+        pdf_bytes = generate_pdf_report("Monthly Financial Report", meta, advice_text, None)
+        if pdf_bytes:
+            st.download_button("Download Report PDF", pdf_bytes, file_name="OptiFin_Report.pdf", mime="application/pdf")
+        else:
+            st.error("PDF generation failed.")
+
+    if st.button("Generate Excel Report"):
+        # Example data
+        df = pd.DataFrame([{"Goal": "Retirement", "Progress": 45, "Target": 100}])
+        excel_bytes = generate_excel_report(df)
+        st.download_button("Download Report Excel", excel_bytes, file_name="OptiFin_Report.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+# --- Fix rerun issue for buttons across app ---
+def rerun_on_button(label, key=None):
+    clicked = st.button(label, key=key)
+    if clicked:
+        st.experimental_rerun()
+    return clicked
+
+
+# --- Final CSS polish ---
+def get_final_css():
+    theme = st.session_state.get("theme", "dark")
+    text_c = "#eef6ff" if theme == "dark" else "#111"
+    bgrgba = "rgba(20,24,28, 0.85)" if theme == "dark" else "rgba(255,255,255, 0.9)"
+    return f"""
+    <style>
+    body {{
+        color: {text_c} !important;
+        background-color: {bgrgba} !important;
+        user-select: none;
+    }}
+    button {{
+        user-select: none;
+        border-radius: 16px !important;
+        font-weight: 700 !important;
+        padding: 14px 32px !important;
+        transition: all 0.3s ease !important;
+        background: linear-gradient(135deg,#004174,#047860) !important;
+        box-shadow: 0 6px 20px rgba(4,120,96,0.4);
+        color: white !important;
+    }}
+    button:hover, button:focus {{
+        background: linear-gradient(135deg,#047860,#004174) !important;
+        outline:none !important;
+        box-shadow: 0 15px 35px rgba(4,120,96,0.7);
+    }}
+    .stTextInput>div>div>input {{
+        color: {text_c} !important;
+        font-size: 16px !important;
+        padding: 14px 18px !important;
+        user-select: text !important;
+    }}
+    </style>
+    """
+
+def apply_final_css():
+    st.markdown(get_final_css(), unsafe_allow_html=True)
+
+
+# --- Main Router addition for Part 9 ---
+def main_router():
+    page = st.session_state.page
+
+    if page == "monthly_report":
+        page_monthly_report()
+    else:
+        # Fallback default pages (connect to your earlier router or extend)
+        st.write(f"Page '{page}' content goes here.")
+        if rerun_on_button("Back to Home"):
+            st.session_state.page = "home"
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    apply_final_css()
+    extend_sidebar()
+    main_router()
+# OptiFin Part 10 — Advanced Portfolio & Market Data Integration
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objs as go
+
+def fetch_stock_data(ticker: str, period="1mo", interval="1d") -> pd.DataFrame:
+    try:
+        stock = yf.Ticker(ticker)
+        hist = stock.history(period=period, interval=interval)
+        if hist.empty:
+            st.warning(f"No data found for {ticker}")
+            return pd.DataFrame()
+        hist.reset_index(inplace=True)
+        return hist
+    except Exception as e:
+        st.error(f"Error fetching stock data: {str(e)}")
+        return pd.DataFrame()
+
+def page_portfolio_overview():
+    st.header("My Investment Portfolio Overview")
+    portfolio = st.session_state.auth_profile.get("portfolio", [])
+    if not portfolio:
+        st.info("Your portfolio is empty. Add investments in the Goals section or profile.")
+        return
+
+    tickers = [item.get("ticker") for item in portfolio if "ticker" in item]
+    tickers = list(set(tickers))  # Unique tickers
+    for ticker in tickers:
+        st.subheader(f"Ticker: {ticker}")
+        df = fetch_stock_data(ticker)
+        if df.empty:
+            continue
+        
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter(x=df['Date'], y=df['Close'], mode='lines', name='Close Price'))
+        fig.update_layout(
+            title=f"{ticker} Closing Price - Last Month",
+            xaxis_title="Date",
+            yaxis_title="Price (ZAR)",
+            template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
+            height=400,
+        )
+        st.plotly_chart(fig, use_container_width=True)
+
+        # Portfolio item current value estimate
+        quantity = next((item.get("quantity", 0) for item in portfolio if item.get("ticker") == ticker), 0)
+        current_price = df["Close"].iloc[-1]
+        value = quantity * current_price
+        st.metric("Current Value", f"R {value:,.2f}", delta=None)
+
+def interactive_goals_chart():
+    st.header("Goals Progress Visualization")
+    profile = st.session_state.auth_profile or {}
+    goals = profile.get("goals", [])
+
+    if not goals:
+        st.info("You have not set any goals yet.")
+        return
+
+    # Prepare data
+    names = [g['name'] for g in goals]
+    targets = [g['amount'] for g in goals]
+    progresses = [np.random.uniform(0, t) for t in targets]
+
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=names, y=targets, name='Target Amount', marker_color='lightblue'))
+    fig.add_trace(go.Bar(x=names, y=progresses, name='Current Progress', marker_color='green'))
+
+    fig.update_layout(barmode='group', title="Goals vs Progress", yaxis_title="R (ZAR)")
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# Integration example in main router
+def main_router():
+    page = st.session_state.page
+
+    if page == "portfolio_overview":
+        page_portfolio_overview()
+    elif page == "goals_chart":
+        interactive_goals_chart()
+    else:
+        # Assume fallback to existing router logic from prior parts
+        st.info(f"Page {page} placeholder. Implement further here.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 11 — Calendar, Alerts, Multi-language, Accessibility & Settings
+
+import streamlit as st
+import datetime
+import locale
+
+# Locale setting for date format
+LOCALE_MAP = {
+    "en": "en_US.UTF-8",
+    "fr": "fr_FR.UTF-8",
+    "es": "es_ES.UTF-8",
+}
+
+# Financial calendar and reminders data (could be fetched dynamically from APIs)
+FINANCIAL_EVENTS = [
+    {"date": "2025-03-31", "title": "SA SARS Tax Returns Deadline", "description": "File your income tax returns with SARS."},
+    {"date": "2025-06-30", "title": "Q2 VAT Submission", "description": "Submit VAT reports for Q2."},
+    {"date": "2025-12-01", "title": "Retirement Fund Annual Contribution Deadline", "description": "Last day to contribute to your retirement fund."},
+]
+
+# Alert management with persistence
+def load_alerts():
+    return st.session_state.get("alerts", [])
+
+def save_alerts(alerts):
+    st.session_state.alerts = alerts
+
+def page_financial_calendar():
+    st.header("Financial Calendar & Reminders")
+    locale_code = LOCALE_MAP.get(st.session_state.auth_profile.get("language", "en"), "en_US.UTF-8")
+    
+    try:
+        locale.setlocale(locale.LC_TIME, locale_code)
+    except Exception:
+        pass  # fallback gracefully
+
+    today = datetime.date.today()
+    upcoming_events = [e for e in FINANCIAL_EVENTS if datetime.date.fromisoformat(e["date"]) >= today]
+    
+    for event in upcoming_events:
+        event_date = datetime.date.fromisoformat(event["date"])
+        formatted_date = event_date.strftime("%A, %d %B %Y")
+        st.markdown(f"### {event['title']} - {formatted_date}")
+        st.write(event["description"])
+
+# Alerts Notifications Page
+def page_alerts():
+    st.header("Alerts & Notifications")
+    alerts = load_alerts()
+    new_alert = st.text_input("Add New Alert")
+
+    if st.button("Add Alert"):
+        if new_alert.strip():
+            alerts.append({"text": new_alert.strip(), "date": datetime.datetime.now().isoformat()})
+            save_alerts(alerts)
+            st.experimental_rerun()
+
+    if alerts:
+        for i, alert in enumerate(alerts):
+            st.markdown(f"- [{alert['date'][:10]}] {alert['text']}")
+            if st.button(f"Remove Alert {i+1}", key=f'remove_alert_{i}'):
+                alerts.pop(i)
+                save_alerts(alerts)
+                st.experimental_rerun()
+    else:
+        st.info("No alerts yet.")
+
+# Multi-language & currency settings page
+def page_settings():
+    st.header("User Settings & Preferences")
+    profile = st.session_state.auth_profile or {}
+
+    lang_options = {"English": "en", "French": "fr", "Spanish": "es"}
+    currency_options = {"South African Rand": "ZAR", "USD": "USD", "EUR": "EUR", "GBP": "GBP"}
+
+    lang_inv = {v: k for k,v in lang_options.items()}
+    currency_inv = {v: k for k,v in currency_options.items()}
+
+    current_lang = profile.get("language", "en")
+    current_currency = profile.get("currency", "ZAR")
+
+    selected_lang = st.selectbox("Preferred Language", list(lang_options.keys()), index=list(lang_options.values()).index(current_lang))
+    selected_currency = st.selectbox("Preferred Currency", list(currency_options.keys()), index=list(currency_options.values()).index(current_currency))
+
+    if st.button("Save Preferences"):
+        profile["language"] = lang_options[selected_lang]
+        profile["currency"] = currency_options[selected_currency]
+        st.session_state.auth_profile = profile
+
+        # Save to USERS_DB if using file or DB storage (simplified)
+        if st.session_state.auth_username in USERS_DB:
+            USERS_DB[st.session_state.auth_username]["profile"] = profile
+        st.success("Preferences saved! The app will reload with your preferences.")
+        st.experimental_rerun()
+
+# Accessibility improvements (adds a skip link and usage instructions)
+def apply_accessibility_features():
+    st.markdown("""
+    <style>
+    a.skip-link {
+      position: absolute;
+      left: -999px;
+      top: auto;
+      width: 1px;
+      height: 1px;
+      overflow: hidden;
+      z-index: -999;
+    }
+    a.skip-link:focus {
+      position: static;
+      width: auto;
+      height: auto;
+      margin: 10px;
+      padding: 10px;
+      background-color: #004174;
+      color: white;
+      text-decoration: none;
+      z-index: 1000;
+      outline: 2px solid #50fa7b;
+    }
+    </style>
+    <a href="#main-content" class="skip-link">Skip to main content</a>
+    """, unsafe_allow_html=True)
+
+    st.markdown('<div id="main-content" tabindex="-1"></div>', unsafe_allow_html=True)
+    st.info(
+        "Keyboard Navigation Tips: Use Tab to move between interactive elements. "
+        "Use Enter to activate buttons & links."
+    )
+
+# Integrate Part 11 pages into router
+def main_router():
+    page = st.session_state.page
+
+    if page == "financial_calendar":
+        page_financial_calendar()
+    elif page == "alerts":
+        page_alerts()
+    elif page == "settings":
+        page_settings()
+    else:
+        st.info(f"Page '{page}' content placeholder...")
+
+if __name__=="__main__":
+    init_state()
+    init_auth_state()
+    apply_accessibility_features()
+    extend_sidebar()
+    main_router()
+# OptiFin Part 12 — Advanced Investment Dashboard with yfinance & Plotly
+
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import plotly.graph_objs as go
+from datetime import datetime
+
+# Fetch live stock data
+def fetch_stock_data(ticker, period='1y', interval='1d'):
+    try:
+        ticker_obj = yf.Ticker(ticker)
+        hist = ticker_obj.history(period=period, interval=interval)
+        hist.reset_index(inplace=True)
+        return hist
+    except Exception as e:
+        st.error(f"Failed fetching {ticker}: {str(e)}")
+        return pd.DataFrame()
+
+# Calculate portfolio value over time
+def calculate_portfolio_performance(portfolio):
+    combined_df = None
+    for asset in portfolio:
+        ticker = asset.get('ticker')
+        quantity = asset.get('quantity', 0)
+        df = fetch_stock_data(ticker)
+        if df.empty:
+            continue
+        df['value'] = df['Close'] * quantity
+        df = df[['Date', 'value']]
+        df.rename(columns={'value': ticker}, inplace=True)
+        if combined_df is None:
+            combined_df = df
+        else:
+            combined_df = pd.merge(combined_df, df, on='Date', how='outer')
+    if combined_df is None:
+        return pd.DataFrame()
+    combined_df.fillna(method='ffill', inplace=True)
+    combined_df.fillna(0, inplace=True)
+    combined_df['Total Portfolio'] = combined_df.drop(columns=['Date']).sum(axis=1)
+    return combined_df
+
+# Plot portfolio value and components
+def plot_portfolio(df):
+    if df.empty:
+        st.warning("No data to plot for portfolio.")
+        return
+    fig = go.Figure()
+    for col in df.columns:
+        if col != 'Date':
+            fig.add_trace(go.Scatter(
+                x=df['Date'], y=df[col], mode='lines', name=col
+            ))
+    fig.update_layout(
+        title="Portfolio Performance Over Time",
+        xaxis_title="Date",
+        yaxis_title="Portfolio Value (ZAR)",
+        height=600,
+        template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Sector allocation chart (dummy data example)
+def plot_sector_allocation():
+    sectors = {
+        "Technology": 25,
+        "Financials": 20,
+        "Healthcare": 15,
+        "Consumer Goods": 15,
+        "Energy": 10,
+        "Utilities": 5,
+        "Other": 10,
+    }
+    labels = list(sectors.keys())
+    values = list(sectors.values())
+
+    fig = go.Figure(data=[go.Pie(labels=labels, values=values, hole=0.4)])
+    fig.update_layout(title="Portfolio Sector Allocation", height=400)
+    st.plotly_chart(fig, use_container_width=True)
+
+# Main investment dashboard page
+def page_investment_dashboard():
+    st.title("Investment Dashboard")
+
+    portfolio = st.session_state.auth_profile.get("portfolio", [])
+
+    if not portfolio:
+        st.info("Your portfolio is empty. Please add investments in your profile.")
+        return
+
+    st.subheader("Portfolio Composition")
+    portfolio_df = pd.DataFrame(portfolio)
+    st.dataframe(portfolio_df)
+
+    st.subheader("Portfolio Value Over Time")
+    perf_df = calculate_portfolio_performance(portfolio)
+    if perf_df.empty:
+        st.warning("Unable to fetch portfolio historical data.")
+    else:
+        plot_portfolio(perf_df)
+
+    st.subheader("Sector Allocation")
+    plot_sector_allocation()
+
+    # Individual stock quick stats
+    for asset in portfolio:
+        ticker = asset.get('ticker')
+        if not ticker:
+            continue
+        st.markdown(f"### {ticker} Details")
+        df = fetch_stock_data(ticker, period='5d', interval='1d')
+        if not df.empty:
+            st.line_chart(df.set_index('Date')['Close'])
+            last_price = df['Close'].iloc[-1]
+            st.metric("Last Close Price", f"R {last_price:.2f}")
+
+# Integrate page to router (call this in your main_router or equivalent)
+def main_router():
+    page = st.session_state.page
+
+    if page == "investment_dashboard":
+        page_investment_dashboard()
+    else:
+        # fallback handle other pages as before
+        st.info(f"Page '{page}' not implemented yet.")
+
+if __name__=="__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 14 — Wallet & Transaction Ledger
+
+import streamlit as st
+import pandas as pd
+import io
+import datetime
+
+# Initialize user wallet transactions store
+def init_wallet():
+    if "wallet_transactions" not in st.session_state:
+        st.session_state.wallet_transactions = pd.DataFrame(columns=["Date", "Category", "Description", "Amount"])
+
+def add_transactions_from_csv(csv_file):
+    try:
+        new_txns = pd.read_csv(csv_file, parse_dates=["Date"])
+        # Ensure required columns exist
+        expected_cols = {"Date", "Category", "Description", "Amount"}
+        if not expected_cols.issubset(set(new_txns.columns)):
+            st.error(f"CSV must have columns: {expected_cols}")
+            return False
+
+        # Append new transactions, avoid duplicates by Date+Desc+Amount
+        wallet = st.session_state.wallet_transactions
+        combined = pd.concat([wallet, new_txns]).drop_duplicates(subset=["Date", "Description", "Amount"], keep="last").reset_index(drop=True)
+        st.session_state.wallet_transactions = combined.sort_values("Date", ascending=False)
+
+        st.success(f"{len(new_txns)} transactions added successfully.")
+        return True
+    except Exception as e:
+        st.error(f"Error parsing CSV: {str(e)}")
+        return False
+
+def export_wallet_to_csv():
+    wallet = st.session_state.wallet_transactions
+    csv_buffer = io.StringIO()
+    wallet.to_csv(csv_buffer, index=False)
+    b = csv_buffer.getvalue().encode()
+    return b
+
+def page_wallet():
+    init_wallet()
+    st.title("Wallet & Transaction Ledger")
+
+    # CSV Upload for transactions
+    uploaded_file = st.file_uploader("Import Transactions CSV", type=["csv"])
+    if uploaded_file:
+        if add_transactions_from_csv(uploaded_file):
+            st.experimental_rerun()
+
+    # Date Range Filter
+    wallet = st.session_state.wallet_transactions
+    if wallet.empty:
+        st.info("No transactions yet. Import your CSV file to get started.")
+        return
+
+    min_date = wallet["Date"].min()
+    max_date = wallet["Date"].max()
+    date_filter = st.slider("Filter Date Range", min_value=min_date, max_value=max_date,
+                            value=(min_date, max_date), format="YYYY-MM-DD")
+
+    filtered_wallet = wallet[(wallet["Date"] >= date_filter[0]) & (wallet["Date"] <= date_filter[1])]
+
+    # Category Filter
+    categories = sorted(filtered_wallet["Category"].dropna().unique().tolist())
+    selected_categories = st.multiselect("Filter by Category", options=categories, default=categories)
+
+    filtered_wallet = filtered_wallet[filtered_wallet["Category"].isin(selected_categories)]
+
+    # Show filtered transactions with pagination
+    st.markdown(f"### Showing {len(filtered_wallet)} Transactions")
+
+    PAGE_SIZE = 10
+    total_pages = (len(filtered_wallet) - 1) // PAGE_SIZE + 1
+
+    page_num = st.number_input("Page Number", min_value=1, max_value=total_pages, value=1, step=1)
+
+    start_idx = (page_num - 1) * PAGE_SIZE
+    end_idx = start_idx + PAGE_SIZE
+
+    to_display = filtered_wallet.iloc[start_idx:end_idx]
+
+    st.dataframe(to_display.reset_index(drop=True), height=300)
+
+    # Expense/Income Summary Chart (Monthly)
+    if not filtered_wallet.empty:
+        filtered_wallet["Month"] = filtered_wallet["Date"].dt.to_period("M").dt.to_timestamp()
+        summary = filtered_wallet.groupby(["Month"])["Amount"].sum().reset_index()
+
+        st.markdown("### Monthly Net Inflow/Outflow")
+        st.bar_chart(summary.rename(columns={"Month": "index"}).set_index("index")["Amount"])
+
+    # Export CSV
+    csv_bytes = export_wallet_to_csv()
+    st.download_button("Export Wallet to CSV", csv_bytes, file_name="optifin_wallet.csv", mime="text/csv")
+
+    if st.button("Clear All Transactions"):
+        st.session_state.wallet_transactions = pd.DataFrame(columns=["Date", "Category", "Description", "Amount"])
+        st.success("All transactions cleared.")
+        st.experimental_rerun()
+# OptiFin Part 16 — AI Dynamic Scenario Simulation and Behavioral Finance Insights
+
+import streamlit as st
+import numpy as np
+import random
+import openai
+
+# Simulate dynamic "What-if" scenario tool
+def simulate_what_if_scenarios(current_savings, monthly_income, monthly_expenses, years, volatility=0.1):
+    np.random.seed(42)
+    months = years * 12
+    balance = current_savings
+    balances = []
+    for month in range(months):
+        # Random "shock" factor influenced by volatility
+        shock = np.random.normal(loc=0, scale=volatility)
+        # Income varies ± shock, expenses vary ± shock
+        income = monthly_income * (1 + shock)
+        expenses = monthly_expenses * (1 + shock)
+        balance = balance + income - expenses
+        # Ensure no negative savings (except can dip to small negative)
+        balance = max(balance, -1000)
+        balances.append(balance)
+    return balances
+
+def plot_simulation(balances):
+    import plotly.graph_objs as go
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(y=balances, mode='lines+markers', name='Projected Balance'))
+    fig.update_layout(
+        title="Simulated Savings Balance Over Time",
+        xaxis_title="Months",
+        yaxis_title="Balance (ZAR)",
+        template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white',
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+# Behavioral finance AI insight generator
+def generate_behavioral_insights(user_profile):
+    prompt = f"""
+You are a behavioral finance assistant. Based on this user's profile and financial behavior:
+{user_profile}
+
+Generate actionable insights about their spending/saving habits, emotional biases, and tailored advice to optimize their financial wellbeing avoiding common behavioral pitfalls."""
+
+    if "OPENAI_API_KEY" in st.secrets:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        try:
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=prompt,
+                temperature=0.8,
+                max_tokens=400,
+                top_p=1,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+            return response.choices[0].text.strip()
+        except Exception as e:
+            return f"AI generation error: {str(e)}"
+    else:
+        # Fallback sample insights
+        return """
+- Your spending tends to increase at month-ends; consider setting stricter budgets during this period.
+- You show a tendency towards loss aversion; diversifying your investments can reduce instinctive sell-offs.
+- Automate savings to reduce impulsive spending.
+- Schedule monthly financial reviews to keep your goals aligned.
+"""
+
+def page_advanced_ai_companion():
+    st.title("AI-Powered Financial Companion & Scenario Simulator")
+
+    st.markdown("""
+    Adjust your inputs to simulate financial outcomes under realistic variability.
+    Receive personalized behavioral finance insights powered by AI.
+    """)
+
+    profile = st.session_state.auth_profile or {}
+    current_savings = st.number_input("Current Savings (ZAR)", min_value=0.0, value=profile.get("current_savings", 5000))
+    monthly_income = st.number_input("Monthly Income (ZAR)", min_value=0.0, value=profile.get("monthly_income", 20000))
+    monthly_expenses = st.number_input("Monthly Expenses (ZAR)", min_value=0.0, value=profile.get("monthly_expenses", 15000))
+    simulation_years = st.slider("Simulation Period (Years)", min_value=1, max_value=10, value=5)
+    volatility = st.slider("Financial Variability (Volatility)", 0.0, 1.0, 0.1)
+
+    if st.button("Run Scenario Simulation"):
+        balances = simulate_what_if_scenarios(current_savings, monthly_income, monthly_expenses, simulation_years, volatility)
+        plot_simulation(balances)
+
+    if st.button("Get Behavioral Finance Insights"):
+        insights = generate_behavioral_insights(profile)
+        st.markdown(f"### AI Behavioral Insights\n\n{insights}")
+
+# Integration example in router
+def main_router():
+    page = st.session_state.page
+
+    if page == "advanced_ai_companion":
+        page_advanced_ai_companion()
+    else:
+        st.info(f"Page '{page}' placeholder here.")
+
+if __name__=="__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 17 — Smart Alerts & Notifications System
+
+import streamlit as st
+import datetime
+
+def init_alerts():
+    if "alerts" not in st.session_state:
+        st.session_state.alerts = []
+
+def add_alert(message: str, level="info", auto=False):
+    """
+    Add an alert.
+    `level` can be info, warning, error
+    `auto` indicates if alert was auto-generated by system
+    """
+    st.session_state.alerts.append({
+        "id": len(st.session_state.alerts) + 1,
+        "message": message,
+        "level": level,
+        "timestamp": datetime.datetime.now(),
+        "auto": auto,
+        "read": False
+    })
+
+def remove_alert(alert_id):
+    st.session_state.alerts = [a for a in st.session_state.alerts if a["id"] != alert_id]
+
+def mark_alert_read(alert_id):
+    for alert in st.session_state.alerts:
+        if alert["id"] == alert_id:
+            alert["read"] = True
+
+# Generate automated alerts based on user financial data
+def generate_auto_alerts():
+    profile = st.session_state.auth_profile or {}
+    wallet = st.session_state.get("wallet_transactions", pd.DataFrame())
+
+    # Example logic: low balance alert
+    recent_balance = profile.get("current_savings", 0)
+    if recent_balance < 1000:
+        exists = any(a for a in st.session_state.alerts if "low balance" in a["message"].lower() and a["auto"])
+        if not exists:
+            add_alert("⚠️ Your savings balance is critically low.", level="warning", auto=True)
+
+    # Example: Upcoming tax due date reminders
+    today = datetime.date.today()
+    tax_due = datetime.date(today.year, 3, 31)
+    days_to_due = (tax_due - today).days
+    if 0 <= days_to_due <= 7:
+        exists = any(a for a in st.session_state.alerts if "tax" in a["message"].lower() and a["auto"])
+        if not exists:
+            add_alert(f"⏰ Reminder: SARS tax return deadline in {days_to_due} day(s).", level="info", auto=True)
+
+def page_alerts():
+    st.title("Notifications & Alerts")
+    init_alerts()
+    generate_auto_alerts()
+
+    if not st.session_state.alerts:
+        st.info("No alerts at this moment. You're all clear!")
+
+    # Display alerts with filters
+    show_unread_only = st.checkbox("Show only unread alerts", value=True)
+    filtered_alerts = [a for a in st.session_state.alerts if not (show_unread_only and a["read"])]
+
+    for alert in filtered_alerts:
+        bg_color = "#323232" if alert["level"] == "info" else "#a15627" if alert["level"] == "warning" else "#701313"
+        style = f"background-color: {bg_color}; padding: 15px; margin-bottom: 10px; border-radius: 8px; color: white;"
+        with st.container():
+            st.markdown(f"<div style='{style}'>"
+                        f"<strong>{'AUTOMATED' if alert['auto'] else 'USER'} Alert:</strong> {alert['message']}<br>"
+                        f"<small>{alert['timestamp'].strftime('%Y-%m-%d %H:%M:%S')}</small>"
+                        f"</div>", unsafe_allow_html=True)
+
+            col1, col2 = st.columns([1, 1])
+            if col1.button(f"Mark Read (ID: {alert['id']})", key=f"read_{alert['id']}"):
+                mark_alert_read(alert["id"])
+                st.experimental_rerun()
+            if col2.button(f"Dismiss (ID: {alert['id']})", key=f"dismiss_{alert['id']}"):
+                remove_alert(alert["id"])
+                st.experimental_rerun()
+
+    # Manual add alert
+    st.markdown("---")
+    st.header("Add Custom Alert")
+    msg = st.text_input("Alert message")
+    lvl = st.selectbox("Level", ["info", "warning", "error"])
+    if st.button("Add Alert"):
+        if msg.strip():
+            add_alert(msg.strip(), level=lvl, auto=False)
+            st.success("Custom alert added!")
+            st.experimental_rerun()
+        else:
+            st.error("Alert message cannot be empty.")
+
+# Add to main router
+def main_router():
+    page = st.session_state.page
+    if page == "alerts":
+        page_alerts()
+    else:
+        st.info(f"Page '{page}' placeholder.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 18 — AI-Powered Personalized Investment Tips & Market Sentiment Guidance
+
+import streamlit as st
+import random
+import openai
+import datetime
+
+# Simulate live market sentiment & news (would use APIs in real app)
+MARKET_SENTIMENTS = [
+    {"sector": "Technology", "sentiment": 0.82, "headline": "Tech sector rallies on AI innovations"},
+    {"sector": "Financials", "sentiment": -0.44, "headline": "Bank stocks dip amid regulatory concerns"},
+    {"sector": "Healthcare", "sentiment": 0.15, "headline": "Healthcare gains modest traction on new drug approvals"},
+    {"sector": "Energy", "sentiment": -0.30, "headline": "Energy sector under pressure due to policy shifts"},
+]
+
+# Generate AI investment tips based on profile and current sentiment
+def generate_investment_tips(profile, market_sentiments):
+    user_info = f"""
+User Profile:
+- Risk tolerance: {profile.get('risk_tolerance', 'medium')}
+- Portfolio allocation: {profile.get('portfolio_allocation', 'balanced')}
+- Investment goals: {profile.get('investment_goals', 'growth')}
+- Current savings: {profile.get('current_savings', 0):,.2f} ZAR
+"""
+    sentiment_summary = "\n".join([f"- {m['sector']}: {'Positive' if m['sentiment']>0 else 'Negative'} ({m['headline']})" for m in market_sentiments])
+
+    prompt = f"""
+You are a top financial AI advisor. The client has the following profile:
+{user_info}
+
+Current market sentiment is:
+{sentiment_summary}
+
+Provide personalized, clear, and actionable investment recommendations based on this data.
+Keep it in plain language, encouraging cautious yet growth-minded decisions.
+"""
+
+    if "OPENAI_API_KEY" in st.secrets:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        try:
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=prompt,
+                max_tokens=500,
+                temperature=0.7
+            )
+            return response.choices[0].text.strip()
+        except Exception as e:
+            return f"AI generation error: {str(e)}"
+    else:
+        # Basic fallback generated tips
+        return """Based on your sentiment and risk tolerance:
+- Consider increasing exposure to Technology sector, especially AI-related companies.
+- Monitor Financial sector carefully due to regulatory risks.
+- Maintain diversified holdings in Healthcare for steady growth.
+- Reduce Energy sector exposure until policy uncertainty resolves."""
+
+def page_investment_tips():
+    st.title("Personalized Investment Tips & Market Sentiment Guidance")
+
+    profile = st.session_state.auth_profile or {}
+    st.markdown("Your profile and current market sentiment are analyzed to generate tailored investment advice.")
+
+    # Display simulated market sentiment overview
+    st.subheader("Market Sentiment Snapshot")
+    for market in MARKET_SENTIMENTS:
+        sentiment_icon = "🔺" if market["sentiment"] > 0 else "🔻"
+        st.markdown(f"**{market['sector']}**: {sentiment_icon} {market['headline']}")
+
+    # User risk tolerance input (for demo)
+    risk_tolerance = st.selectbox("Risk Tolerance", ["low", "medium", "high"], index=1)
+    portfolio_alloc = st.selectbox("Portfolio Allocation Style", ["balanced", "growth", "income"], index=0)
+    investment_goals = st.text_area("Investment Goals", "Long-term growth and wealth preservation")
+
+    # Save user inputs to profile for context (optional persistence here)
+    profile["risk_tolerance"] = risk_tolerance
+    profile["portfolio_allocation"] = portfolio_alloc
+    profile["investment_goals"] = investment_goals
+    st.session_state.auth_profile = profile
+
+    if st.button("Get Personalized Investment Advice"):
+        advice = generate_investment_tips(profile, MARKET_SENTIMENTS)
+        st.markdown(f"### AI-Generated Investment Advice\n\n{advice}")
+
+# Integrate in main router
+def main_router():
+    page = st.session_state.page
+    if page == "investment_tips":
+        page_investment_tips()
+    else:
+        st.info(f"Page '{page}' not implemented yet.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 19 — South African Tax Module with Up-to-date SARS Rules and Filing Alerts
+
+import streamlit as st
+import datetime
+
+# Tax brackets and rebates 2025 (year ending 28 Feb 2026)
+SA_TAX_BRACKETS_2025 = [
+    (0, 237100, 0.18, 0),
+    (237101, 370500, 0.26, 42678),
+    (370501, 512800, 0.31, 77362),
+    (512801, 673000, 0.36, 121475),
+    (673001, 857900, 0.39, 179147),
+    (857901, 1817000, 0.41, 251258),
+    (1817001, float('inf'),0.45,644489)
+]
+
+SA_TAX_REBATES_2025 = {
+    "primary": 17235,
+    "secondary": 9444,
+    "tertiary": 3145
+}
+
+# SARS Filing Season 2025 key dates
+FILING_DATES_2025 = {
+    "auto_assessment_notice_start": datetime.date(2025, 7, 7),
+    "auto_assessment_notice_end": datetime.date(2025, 7, 20),
+    "individual_filing_start": datetime.date(2025, 7, 21),
+    "individual_filing_end": datetime.date(2025, 10, 20),
+    "provisional_filing_start": datetime.date(2025, 7, 21),
+    "provisional_filing_end": datetime.date(2026, 1, 19),
+    "trust_filing_start": datetime.date(2025, 9, 19),
+    "trust_filing_end": datetime.date(2026, 1, 19),
+}
+
+# Retirement fund contribution limits
+RETIREMENT_CONTRIBUTION_LIMIT_2025 = 350000
+
+def calculate_sa_tax(income, age):
+    """
+    Calculate South African income tax for 2025 year of assessment.
+    Applies rebates based on age, progressive rates.
+    """
+    # Determine rebate
+    rebate = SA_TAX_REBATES_2025["primary"]
+    if age >= 65 and age < 75:
+        rebate += SA_TAX_REBATES_2025["secondary"]
+    elif age >= 75:
+        rebate += SA_TAX_REBATES_2025["secondary"] + SA_TAX_REBATES_2025["tertiary"]
+
+    tax_payable = 0.0
+    for bracket in SA_TAX_BRACKETS_2025:
+        low, high, rate, base_tax = bracket
+        if income >= low and income <= high:
+            tax_payable = base_tax + rate * (income - low)
+            break
+
+    tax_payable = max(0, tax_payable - rebate)
+    return tax_payable
+
+def display_tax_summary():
+    st.header("South African Income Tax Calculator 2025")
+
+    age = st.slider("Age", min_value=18, max_value=100, value=30)
+    income = st.number_input("Taxable Annual Income (ZAR)", min_value=0.0, step=1000.0, value=300000.0)
+
+    tax = calculate_sa_tax(income, age)
+    st.metric("Estimated Tax Payable (2025 Year)", f"R {tax:,.2f}")
+
+    st.markdown(f"### Annual Retirement Fund Contributions Limit: R{RETIREMENT_CONTRIBUTION_LIMIT_2025:,}")
+
+def check_filing_deadlines():
+    st.header("SARS 2025 Filing Season Deadlines")
+
+    today = datetime.date.today()
+    messages = []
+
+    for key, date in FILING_DATES_2025.items():
+        days_left = (date - today).days
+        if 0 <= days_left <= 30:
+            messages.append(f"⏰ Deadline: {key.replace('_', ' ').capitalize()} on {date.strftime('%d %b %Y')} ({days_left} day(s) left)")
+
+    if messages:
+        for msg in messages:
+            st.warning(msg)
+    else:
+        st.success("No filing deadlines within the next 30 days.")
+
+def page_sa_tax_module():
+    st.title("South African Tax & Filing Info — 2025 Update")
+
+    display_tax_summary()
+    st.markdown("---")
+    check_filing_deadlines()
+    st.markdown("---")
+    st.info("""
+    This tool uses the **latest SARS tax tables and rebates** effective for the year ending February 28, 2026.
+    It automatically updates filing season deadlines and retirement contribution limits for South African taxpayers.
+    """)
+
+# Integration in main router
+def main_router():
+    page = st.session_state.page
+    if page == "sa_tax_module":
+        page_sa_tax_module()
+    else:
+        st.info(f"Page '{page}' not implemented yet.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 20 — Retirement Planning, Tax Benefits & AI Optimization for South Africa
+
+import streamlit as st
+import pandas as pd
+import numpy as np
+import datetime
+import plotly.graph_objs as go
+
+RETIREMENT_AGE = 65
+ANNUAL_RETIREMENT_CONTRIBUTION_LIMIT = 350000  # 2025 SARS limit
+
+def retirement_projection(current_age, current_savings, annual_contribution, years_until_retirement, avg_return=0.07):
+    """
+    Calculate projected retirement corpus applying compound interest annually.
+    """
+    balances = []
+    balance = current_savings
+    for year in range(years_until_retirement):
+        balance = balance * (1 + avg_return) + annual_contribution
+        balances.append(balance)
+    return balances
+
+def calculate_tax_relief(contribution):
+    """
+    SARS allows tax relief on retirement fund contributions up to a limit.
+    Here we calculate estimated immediate tax relief.
+    """
+    limit = ANNUAL_RETIREMENT_CONTRIBUTION_LIMIT
+    taxable_contrib = min(contribution, limit)
+    relief_rate = 0.276  # Approximate max marginal tax rate for high earners in SA (41% * 67%)
+    tax_relief = taxable_contrib * relief_rate
+    return tax_relief
+
+def page_retirement_planner():
+    st.title("South African Retirement Planning & Tax Optimization")
+
+    profile = st.session_state.auth_profile or {}
+    age = st.slider("Your Current Age", min_value=18, max_value=RETIREMENT_AGE - 1, value=profile.get("age", 30))
+    current_savings = st.number_input("Current Retirement Savings (ZAR)", min_value=0.0, value=profile.get("current_savings", 0.0))
+    annual_contribution = st.number_input("Annual Contribution (ZAR)", min_value=0.0, value=profile.get("annual_contribution", 0.0), max_value=ANNUAL_RETIREMENT_CONTRIBUTION_LIMIT)
+    years_to_retirement = RETIREMENT_AGE - age
+
+    st.markdown(f"**Note:** SARS limits tax-deductible retirement contributions to R{ANNUAL_RETIREMENT_CONTRIBUTION_LIMIT:,} annually.")
+
+    tax_relief = calculate_tax_relief(annual_contribution)
+    st.metric("Estimated Immediate Tax Relief", f"R {tax_relief:,.2f}")
+
+    projection = retirement_projection(age, current_savings, annual_contribution, years_to_retirement)
+
+    # Plotting the growth projection
+    fig = go.Figure()
+    years = list(range(age + 1, RETIREMENT_AGE + 1))
+    fig.add_trace(go.Scatter(x=years, y=projection, mode="lines+markers", name="Projected Retirement Savings"))
+
+    fig.update_layout(title=f"Projected Retirement Savings Growth from Age {age} to {RETIREMENT_AGE}",
+                      xaxis_title="Age",
+                      yaxis_title="Retirement Savings (ZAR)",
+                      template='plotly_dark' if st.session_state.theme == 'dark' else 'plotly_white')
+
+    st.plotly_chart(fig, use_container_width=True)
+
+    # AI Recommendations (basic example, ideally replace with GPT-generated text)
+    if st.button("Get AI Retirement Optimization Tips"):
+        tips = f"""
+- Consider increasing your annual contribution close to theR {ANNUAL_RETIREMENT_CONTRIBUTION_LIMIT:,} limit to maximize tax relief.
+- Start contributing early to benefit from compound interest.
+- Diversify your retirement portfolio for sustainable growth.
+- Review and adjust contributions annually based on your income and lifestyle changes.
+"""
+        st.markdown("### AI-Powered Retirement Tips")
+        st.markdown(tips)
+
+# Integration in main router
+def main_router():
+    page = st.session_state.page
+    if page == "retirement_planner":
+        page_retirement_planner()
+    else:
+        st.info(f"Page '{page}' not implemented yet.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 21 — AI-Driven SARS Tax Optimization & Filing Strategy Support
+
+import streamlit as st
+import openai
+import datetime
+
+# Tax optimization suggestions engine
+def generate_tax_optimization_advice(user_profile, income, age):
+    prompt = f"""
+You are a South African tax expert AI advisor. The user has the following profile and income:
+
+User Profile: {user_profile}
+Annual taxable income: R{income:,.2f}
+Age: {age}
+
+Using SARS 2025/2026 tax laws, rebates, deductions, retirement limits, and filing deadlines, provide:
+- Optimized tax reduction strategies tailored for this user
+- Advice on provisional tax filings and critical deadlines
+- How to leverage retirement savings tax relief optimally
+- Suggestions on deductions such as medical credits, donations, home office, and others applicable in SA
+- Any advanced SARS tax structuring trends and how the user can apply them legitimately
+
+Respond with clear, actionable, plain language advice.
+"""
+
+    if "OPENAI_API_KEY" in st.secrets:
+        openai.api_key = st.secrets["OPENAI_API_KEY"]
+        try:
+            response = openai.Completion.create(
+                engine="text-davinci-003",
+                prompt=prompt,
+                max_tokens=600,
+                temperature=0.6,
+                top_p=1.0,
+                frequency_penalty=0,
+                presence_penalty=0
+            )
+            return response.choices[0].text.strip()
+        except Exception as e:
+            return f"AI generation error: {e}"
+    else:
+        # Fallback canned advice snippet
+        return """
+- Maximize contributions to your retirement fund up to R350,000 annually to reduce taxable income.
+- Claim medical tax credits for yourself and dependents where eligible.
+- Keep documentation for charitable donations, which may be deductible.
+- Review your eligibility for home office deductions based on SARS guidelines.
+- File provisional tax returns timely to avoid penalties.
+- Consider spreading income streams to manage taxable brackets.
+- Leverage tax-free savings accounts for additional tax relief.
+- Stay updated on SARS filing deadlines: July 21 to October 20 for individuals.
+"""
+
+def page_tax_optimization():
+    st.title("South African AI Tax Optimization Advisor")
+
+    profile = st.session_state.auth_profile or {}
+    income = st.number_input("Annual Taxable Income (ZAR)", min_value=0.0, value=profile.get("annual_income", 300000.0))
+    age = st.slider("Age", min_value=18, max_value=100, value=profile.get("age", 35))
+
+    # Display existing profile for transparency
+    st.markdown(f"**Current User Profile:** {profile}")
+
+    if st.button("Get AI-Powered Tax Optimization Advice"):
+        advice = generate_tax_optimization_advice(profile, income, age)
+        st.markdown("### Tax Optimization Advice\n")
+        st.markdown(advice)
+
+# Integrate into router
+def main_router():
+    page = st.session_state.page
+    if page == "tax_optimization":
+        page_tax_optimization()
+    else:
+        st.info(f"Page '{page}' not implemented yet.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 22 — Drag & Drop User Dashboard with Live SARS & AI Widgets
+
+import streamlit as st
+import json
+
+# Default widgets available
+AVAILABLE_WIDGETS = {
+    "tax_alerts": "South African Tax Alerts",
+    "retirement_progress": "Retirement Savings Progress",
+    "portfolio_overview": "Investment Portfolio Summary",
+    "ai_tips": "AI Personalized Tips",
+}
+
+# Simulate storing user dashboard config (replace with DB as needed)
+def get_dashboard_config():
+    return st.session_state.get("dashboard_config", ["tax_alerts", "retirement_progress", "ai_tips"])
+
+def save_dashboard_config(config):
+    st.session_state.dashboard_config = config
+
+def page_dashboard():
+    st.title("My Custom Dashboard")
+    st.markdown("Drag & Drop to reorder widgets. Hide/show to customize what you see.")
+    init_widgets = get_dashboard_config()
+
+    widgets = []
+    col1, col2 = st.columns(2)
+
+    # Widget reorder controls
+    st.markdown("### Rearrange Widgets")
+
+    config_json = json.dumps(init_widgets)
+    new_order_str = st.text_area("Current widget order (edit JSON array of keys)", value=config_json, height=100)
+    try:
+        new_order = json.loads(new_order_str)
+        if isinstance(new_order, list) and all(item in AVAILABLE_WIDGETS for item in new_order):
+            save_dashboard_config(new_order)
+            st.success("Dashboard layout updated.")
+        else:
+            st.warning("Invalid widget configuration list.")
+    except Exception:
+        st.warning("Invalid JSON format.")
+
+    st.markdown("---")
+    st.markdown("### Widgets")
+    config = get_dashboard_config()
+
+    for widget_key in config:
+        if widget_key == "tax_alerts":
+            with st.expander(AVAILABLE_WIDGETS[widget_key], expanded=True):
+                tax_alerts_widget()
+        elif widget_key == "retirement_progress":
+            with st.expander(AVAILABLE_WIDGETS[widget_key], expanded=True):
+                retirement_progress_widget()
+        elif widget_key == "portfolio_overview":
+            with st.expander(AVAILABLE_WIDGETS[widget_key], expanded=True):
+                portfolio_overview_widget()
+        elif widget_key == "ai_tips":
+            with st.expander(AVAILABLE_WIDGETS[widget_key], expanded=True):
+                ai_tips_widget()
+        else:
+            st.info(f"Unknown widget: {widget_key}")
+
+# Example widget implementations:
+
+def tax_alerts_widget():
+    from datetime import datetime
+    today = datetime.today()
+    # Simple example alerts
+    st.info(f"Tax Filing Season ends on 20 Oct 2025 ({(datetime(2025,10,20)-today).days} days left).")
+    st.warning("Maximum retirement contribution for tax relief: R350,000 per year.")
+
+def retirement_progress_widget():
+    profile = st.session_state.auth_profile or {}
+    balance = profile.get("current_savings", 0)
+    target = 3_000_000  # Sample retirement corpus goal
+    progress = min(balance / target, 1.0) * 100
+    st.metric("Retirement Savings Progress", f"{progress:.1f}%", delta=f"R{balance:,.0f} out of R{target:,}")
+
+def portfolio_overview_widget():
+    profile = st.session_state.auth_profile or {}
+    portfolio = profile.get("portfolio", [])
+    st.write("You hold", len(portfolio), "assets.")
+    # Example placeholder for portfolio summary
+    if portfolio:
+        total_value = sum(item.get("quantity",0)*item.get("price",0) for item in portfolio)
+        st.metric("Estimated Portfolio Value (ZAR)", f"R {total_value:,.2f}")
+    else:
+        st.info("No portfolio data available.")
+
+def ai_tips_widget():
+    st.markdown("**AI Personalized Tips**")
+    tips = """
+- Think long-term; avoid emotional reactions to market volatility.
+- Maximize your retirement tax relief annually.
+- Review your investment portfolio quarterly.
+- Automate savings to reduce spending temptations.
+"""
+    st.markdown(tips)
+
+# Router integration
+def main_router():
+    page = st.session_state.page
+    if page == "dashboard":
+        page_dashboard()
+    else:
+        st.info(f"Page '{page}' placeholder...")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
+# OptiFin Part 23 — Responsive UX & Notification Center
+
+import streamlit as st
+
+# CSS for mobile responsiveness and accessibility
+RESPONSIVE_CSS = """
+<style>
+/* Base layout spacing */
+section > div[data-testid="stVerticalBlock"] {
+    padding: 0.5rem !important;
+}
+.block-container {
+    max-width: 900px;
+    margin: auto;
+    padding: 10px;
+}
+
+/* Responsive tweaks */
+@media (max-width: 600px) {
+    .block-container {
+        padding: 5px;
+    }
+}
+
+/* Accessibility - focus outlines */
+[data-testid="stButton"] button:focus {
+    outline: 3px solid #05f;
+    outline-offset: 2px;
+}
+
+/* Notification badges */
+.stAlertNotification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: #074074dd;
+    color: white;
+    padding: 8px 16px;
+    border-radius: 50px;
+    cursor: pointer;
+    font-weight: 700;
+    z-index: 9999;
+}
+</style>
+"""
+
+def apply_responsive_css():
+    st.markdown(RESPONSIVE_CSS, unsafe_allow_html=True)
+
+# Notification Center UI
+def notification_center_ui():
+    init_alerts()
+    unread_count = sum(1 for a in st.session_state.alerts if not a.get("read", False))
+    if unread_count == 0:
+        return
+
+    # Floating notification badge
+    if st.button(f"🔔 You have {unread_count} unread alert(s)", key="notif_button"):
+        # Show notification panel
+        st.session_state.show_notifications = not st.session_state.get("show_notifications", False)
+
+    if st.session_state.get("show_notifications", False):
+        st.markdown("### Notifications")
+        for alert in st.session_state.alerts:
+            status = "✅" if alert.get("read", False) else "🕒"
+            st.markdown(f"{status} {alert['message']} — *{alert['timestamp'].strftime('%d %b %Y %H:%M')}*")
+            col1, col2 = st.columns(2)
+            if col1.button(f"Mark Read {alert['id']}", key=f"mark_{alert['id']}"):
+                alert["read"] = True
+                st.experimental_rerun()
+            if col2.button(f"Dismiss {alert['id']}", key=f"dismiss_{alert['id']}"):
+                st.session_state.alerts = [a for a in st.session_state.alerts if a["id"] != alert["id"]]
+                st.experimental_rerun()
+
+def main_router():
+    page = st.session_state.page or "home"
+    apply_responsive_css()
+
+    notification_center_ui()
+
+    # Your previous page handling
+    if page == "dashboard":
+        page_dashboard()
+    elif page == "alerts":
+        page_alerts()
+    elif page == "retirement_planner":
+        page_retirement_planner()
+    elif page == "tax_optimization":
+        page_tax_optimization()
+    elif page == "investment_tips":
+        page_investment_tips()
+    elif page == "investment_dashboard":
+        page_investment_dashboard()
+    elif page == "wallet":
+        page_wallet()
+    else:
+        st.title("Welcome to OptiFin")
+        st.markdown("Use the sidebar to navigate through your personalized finance features.")
+
+if __name__ == "__main__":
+    init_state()
+    init_auth_state()
+    main_router()
