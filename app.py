@@ -1157,6 +1157,11 @@ def main_router():
 
 # You can insert this main_router function at the end of your app.py,
 # then search your button usages and fix tooltip usage as above.
+if __name__ == "__main__":
+    init_state()         # Initialize global session state variables
+    init_auth_state()    # Initialize auth state variables
+    main_router()        # Run the app page-routing logic
+
 
 
 
