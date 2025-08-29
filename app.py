@@ -963,4 +963,82 @@ apply_global_styles()
 # Footer example for display in main layout
 def app_footer():
     st.markdown(f"<footer>© {APP_YEAR} {APP_NAME} --- Smart financial planning, simplified.</footer>", unsafe_allow_html=True)
+# --- Improved main router with exclusive privacy gate display ---
+def main_router():
+    # Show privacy gate ONLY if consent NOT given
+    if not st.session_state.get("consent_accepted", False):
+        page_privacy_gate()
+        return  # Stop further rendering so no duplicates
+    
+    # Proceed only if consent accepted
+    page = st.session_state.get("page", "privacy_gate")
+    
+    if page == "privacy_gate":
+        # Safety fallback — should not happen if consent accepted
+        page_privacy_gate()
+    elif page == "segment_hub":
+        page_segment_hub()
+    elif page == "ai_natural_router":
+        page_ai_natural_router()
+    elif page == "auth_login":
+        auth_login()
+    elif page == "auth_register":
+        auth_register()
+    elif page == "auth_profile_edit":
+        auth_profile_edit()
+    elif page == "goals_manager":
+        goals_manager()
+    elif page == "module_form":
+        module_form()
+    elif page == "chatbot":
+        page_chatbot()
+    elif page == "bank_upload":
+        page_bank_upload()
+    elif page == "doc_upload":
+        page_doc_upload()
+    elif page == "predictive_cashflow":
+        page_predictive_cashflow()
+    elif page == "reg_updates":
+        display_regulatory_updates()
+    elif page == "monthly_report":
+        page_monthly_report()
+    elif page == "sentiment_insights":
+        page_sentiment_insights()
+    elif page == "achievements":
+        page_achievements()
+    elif page == "community":
+        page_community_forum()
+    elif page == "education":
+        page_educational_resources()
+    elif page == "referral":
+        page_referral_program()
+    elif page == "home":
+        st.title(f"Welcome home, {st.session_state.auth_username}!")
+    else:
+        st.warning(f"Unknown page '{page}'. Redirecting to segment hub.")
+        st.session_state.page = "segment_hub"
+        safe_rerun()
+
+# --- Fix button label tooltips --- 
+# Instead of embed HTML in the button label, do this pattern:
+# st.markdown(f"Question text {tooltip_span('Helpful explanation')}", unsafe_allow_html=True)
+# Then, below or next to it, use:
+# if safe_button("Button Text", key="your_button_key"):
+#     action()
+#
+# For buttons in titles, segment hub etc., remove any embedded HTML or special chars in label.
+
+# For example, in segment hub page replace:
+
+# if safe_button("Individual " + tooltip_span("Financial planning for individuals")):
+
+# with:
+
+st.markdown("Individual " + tooltip_span("Financial planning for individuals"), unsafe_allow_html=True)
+if safe_button("Select Individual", key="segment_individual_btn"):
+    # your button action here
+
+# This keeps the question mark tooltip visible as separate text, not inside button text, avoiding raw html issues.
+
+
 
