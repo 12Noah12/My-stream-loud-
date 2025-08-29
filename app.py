@@ -2626,6 +2626,64 @@ def safe_rerun():
     if not st.session_state.get("_rerun_done", False):
         st.session_state["_rerun_done"] = True
         st.experimental_rerun()
+import streamlit as st
+
+# Dictionary count to generate unique keys for widgets with same label
+_widget_key_counters = {}
+
+def safe_button(label, **kwargs):
+    if 'key' not in kwargs:
+        count = _widget_key_counters.get(label, 0)
+        kwargs['key'] = f"{label}_{count}"
+        _widget_key_counters[label] = count + 1
+    return st.button(label, **kwargs)
+
+def safe_text_input(label, **kwargs):
+    if 'key' not in kwargs:
+        count = _widget_key_counters.get(label, 0)
+        kwargs['key'] = f"{label}_{count}"
+        _widget_key_counters[label] = count + 1
+    return st.text_input(label, **kwargs)
+
+def safe_checkbox(label, **kwargs):
+    if 'key' not in kwargs:
+        count = _widget_key_counters.get(label, 0)
+        kwargs['key'] = f"{label}_{count}"
+        _widget_key_counters[label] = count + 1
+    return st.checkbox(label, **kwargs)
+
+def safe_rerun():
+    if not st.session_state.get("_rerun_done", False):
+        st.session_state["_rerun_done"] = True
+        st.experimental_rerun()
+
+def set_background(image_url):
+    st.markdown(
+        f"""
+        <style>
+        .stApp {{
+            background-image: url("{image_url}");
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+# Call once early in your main app
+set_background("https://images.unsplash.com/photo-1507679799987-c73779587ccf?auto=format&fit=crop&w=1950&q=80")
+
+# Usage: replace all st.button(...) calls with safe_button(...)
+# For example:
+# if safe_button("I Accept"):
+#     ...
+# and replace all st.experimental_rerun() with safe_rerun()
+
+# (Add similar safe_* wrappers for other widgets if needed.)
+
 
 
 
