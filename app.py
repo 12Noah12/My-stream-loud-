@@ -1093,6 +1093,52 @@ def main_router():
         st.session_state.page = "segment_hub"
         st.experimental_rerun()
 
+
+    if page == "privacy_gate":
+        page_privacy_gate()
+    elif page == "segment_hub":
+        page_segment_hub()
+    elif page == "ai_natural_router":
+        page_ai_natural_router()
+    elif page == "auth_login":
+        auth_login()
+    elif page == "auth_register":
+        auth_register()
+    elif page == "auth_profile_edit":
+        auth_profile_edit()
+    elif page == "goals_manager":
+        goals_manager()
+    elif page == "module_form":
+        module_form()
+    elif page == "chatbot":
+        page_chatbot()
+    elif page == "bank_upload":
+        page_bank_upload()
+    elif page == "doc_upload":
+        page_doc_upload()
+    elif page == "predictive_cashflow":
+        page_predictive_cashflow()
+    elif page == "reg_updates":
+        display_regulatory_updates()
+    elif page == "monthly_report":
+        page_monthly_report()
+    elif page == "sentiment_insights":
+        page_sentiment_insights()
+    elif page == "achievements":
+        page_achievements()
+    elif page == "community":
+        page_community_forum()
+    elif page == "education":
+        page_educational_resources()
+    elif page == "referral":
+        page_referral_program()
+    elif page == "home":
+        st.title(f"Welcome home, {st.session_state.auth_username}!")
+    else:
+        st.warning(f"Unknown page '{page}', redirecting to segment hub.")
+        st.session_state.page = "segment_hub"
+        st.experimental_rerun()
+
 # --- Fix button labels with separate tooltips ---
 # Instead of embedding HTML inside button labels (which causes raw text showing),
 # do this example pattern where label and tooltip are separate UI elements:
@@ -1111,6 +1157,7 @@ def main_router():
 
 # You can insert this main_router function at the end of your app.py,
 # then search your button usages and fix tooltip usage as above.
+
 
 
 
